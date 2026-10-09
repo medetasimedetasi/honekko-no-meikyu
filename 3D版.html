@@ -137,7 +137,7 @@ body.log-open #log { opacity: 0; }
 #fontcmp canvas { image-rendering: pixelated; justify-self: center; }
 
 /* 右下：山札と捨て札（札の束） */
-#piles { position: absolute; right: calc(var(--u) * 8); bottom: calc(var(--u) * 4); display: flex; gap: calc(var(--u) * 8); align-items: flex-end; }
+#piles { position: absolute; right: calc(var(--u) * 8); top: calc(var(--u) * 38); display: flex; gap: calc(var(--u) * 8); align-items: flex-end; }   /* 「もちもの一覧」の下（2026-10-09。前は右下）。枚数はカードの上に重ねて低くした（下の説明の窓と重ならないよう） */
 .pile { position: relative; width: calc(var(--u) * 36); text-align: center; }
 .stack { position: relative; height: calc(var(--u) * 48); }
 .stack i { position: absolute; left: 0; width: calc(var(--u) * 33); height: calc(var(--u) * 45); border: calc(var(--u) * 1) solid var(--edge); }
@@ -152,7 +152,9 @@ body.log-open #log { opacity: 0; }
 #disc-face canvas { width: calc(var(--u) * 27); height: calc(var(--u) * 27); display: block; }
 .pile.empty .stack i { opacity: .25; }
 .pile.empty #disc-face { display: none; }
-.pile b { display: block; margin-top: calc(var(--u) * 3); }
+.pile b { position: absolute; left: 0; top: calc(var(--u) * 33); width: calc(var(--u) * 33); text-align: center; line-height: 1; z-index: 1; color: #fbf3e2;
+  text-shadow: calc(var(--u) * .5) 0 0 #221b17, calc(var(--u) * -.5) 0 0 #221b17, 0 calc(var(--u) * .5) 0 #221b17, 0 calc(var(--u) * -.5) 0 #221b17; }
+.pile.small b { top: calc(var(--u) * 19); width: calc(var(--u) * 21); }
 .pile small { display: block; margin-top: calc(var(--u) * 1); color: var(--ink-dim); white-space: nowrap; }
 /* 除外の束（小さめ。灰色に焼けたカード）。押すと除外したカードの一覧 */
 .pile.small { width: calc(var(--u) * 24); cursor: pointer; }
@@ -170,8 +172,18 @@ body.log-open #log { opacity: 0; }
   display: flex; flex-direction: column; align-items: center;
   transition: transform .09s steps(3), opacity .15s, translate .14s ease-out;
 }
-.card .band { width: 100%; height: calc(var(--u) * 9); background: var(--kc, #6e655a); border-bottom: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 calc(var(--u) * 1) 0 #fbf3e255, inset 0 calc(var(--u) * -2) 0 #0003; }
-.card .icon { width: calc(var(--u) * 36); height: calc(var(--u) * 36); margin: 0 0 calc(var(--u) * 1); }   /* 絵は18×18（外周の黒を含む）を2倍 */
+.card .band { position: relative; width: 100%; height: calc(var(--u) * 9); background: var(--kc, #6e655a); border-bottom: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 calc(var(--u) * 1) 0 #fbf3e255, inset 0 calc(var(--u) * -2) 0 #0003;
+  display: flex; align-items: center; justify-content: center; }
+/* 色帯の字：効果といまの数値（白に濃い縁）。鍵は右端 */
+.card .band .eff { font-weight: normal; line-height: 1; color: #fbf3e2; white-space: nowrap;
+  text-shadow: calc(var(--u) * .5) 0 0 #221b17, calc(var(--u) * -.5) 0 0 #221b17, 0 calc(var(--u) * .5) 0 #221b17, 0 calc(var(--u) * -.5) 0 #221b17; }
+.card .band .lock { position: absolute; right: calc(var(--u) * 2); top: calc(var(--u) * .5); width: calc(var(--u) * 7); height: calc(var(--u) * 8); background: var(--lock) 0 0 / 100% 100%; image-rendering: pixelated; }
+.card .art { position: relative; display: block; width: calc(var(--u) * 36); height: calc(var(--u) * 36); margin: 0 0 calc(var(--u) * 1); }
+.card .icon { width: calc(var(--u) * 36); height: calc(var(--u) * 36); display: block; }   /* 絵は18×18（外周の黒を含む）を2倍 */
+/* 合成の段（＋2 など）：絵の右下（手札をしまっていても、両端のカードでぎりぎり見える高さ）に、太いドットの数字（黒・白の縁）を1倍・不透明度80％で（大きさは game3d.js の plusImage が付ける） */
+.card .art .plus { position: absolute; right: calc(var(--u) * -2); top: calc(var(--u) * 18); image-rendering: pixelated; display: block; opacity: .8; }
+/* 絵の下：カードの名前（黒の字、ドットの縁取りなし） */
+.card .nm { display: block; width: 100%; text-align: center; white-space: nowrap; line-height: 1; color: #221b17; opacity: 1; text-shadow: none; }   /* 黒・縁なし（2026-10-09） */
 .card .pips { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(var(--u) * 1); width: calc(var(--u) * 30); min-height: calc(var(--u) * 8); }
 .card .pips i { width: calc(var(--u) * 3); height: calc(var(--u) * 3); background: var(--paper-ink); }
 .card .pips b { font-weight: normal; font-size: calc(var(--u) * 7); line-height: 1; }
@@ -210,7 +222,7 @@ body.log-open #log { opacity: 0; }
   border-width: calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-b));
   border-image: var(--fr-paper) var(--fr-paper-s) var(--fr-paper-s) var(--fr-paper-b) fill / calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-b)) stretch;
   image-rendering: pixelated;
-  /* 中の色（縁の絵の真ん中は抜いてあり、ここが見える。W キーで候補を切り替え） */
+  /* 中の色（縁の絵の真ん中は抜いてあり、ここが見える。候補は game3d.js の WIN_THEMES） */
   background: var(--win-bg, #0b1120cc) padding-box;
 }
 /* 名札（暗い板）：左に数字の札、名前、右に種類 */
@@ -222,6 +234,13 @@ body.log-open #log { opacity: 0; }
 }
 #cardtip .t .nm { flex: 1; }
 #cardtip .t small { color: var(--ink-dim); margin: 0; font-size: var(--fs-s); }
+/* 説明の窓の鍵（7×8 の絵を2倍）：押すとロック（十字キーの自動移動で使わない）。外しているときは開いた鍵を薄く */
+#cardtip .t .lockbtn { width: calc(var(--u) * 18); height: calc(var(--u) * 20); padding: calc(var(--u) * 2); margin: 0 0 0 calc(var(--u) * 2); border: 0; background: none; box-shadow: none; cursor: pointer; opacity: .55; }
+#cardtip .t .lockbtn i { display: block; width: 100%; height: 100%; background: var(--lock-open) 0 0 / 100% 100%; image-rendering: pixelated; }
+#cardtip .t .lockbtn.on { opacity: 1; }
+#cardtip .t .lockbtn.on i { background-image: var(--lock); }
+#cardtip .t .lockbtn:hover { opacity: 1; translate: 0 calc(var(--u) * -1); }
+#cardtip .lockd { color: var(--gold); }
 #cardtip .t .badge { min-width: calc(var(--u) * 9); text-align: center; padding: calc(var(--u) * 1) calc(var(--u) * 1) 0; margin-left: calc(var(--u) * -2);
   background: var(--kc); box-shadow: 0 0 0 calc(var(--u) * 1) #221b17, inset 0 calc(var(--u) * 1) 0 #fbf3e255; }
 #cardtip .bd { padding: 0 calc(var(--u) * 1); }
@@ -263,6 +282,14 @@ body.log-open #log { opacity: 0; }
 #dlg-body .vrow .n { width: calc(var(--u) * 10); text-align: right; font-weight: normal; color: var(--gold); }
 #dlg-body .dlg-card { display: flex; align-items: center; gap: calc(var(--u) * 4); margin: 0 0 calc(var(--u) * 3); color: var(--gold); }
 #dlg-body .dlg-card canvas { width: calc(var(--u) * 36); height: calc(var(--u) * 36); image-rendering: pixelated; }
+/* 歩ける範囲のカード選び：カードを絵・名前・効果で横に並べる */
+#dialog .paper.pick { width: calc(var(--u) * 262); top: calc(var(--u) * 56); }   /* カードを選ぶ窓：5枚を横1列に */
+#dialog .paper.pick #dlg-actions { flex-wrap: nowrap; justify-content: center; }
+#dlg-actions button.pickc { display: flex; flex-direction: column; align-items: center; gap: calc(var(--u) * 2); padding: calc(var(--u) * 3) calc(var(--u) * 2); width: calc(var(--u) * 46); text-align: center; }
+#dlg-actions button.pickc canvas { width: calc(var(--u) * 36); height: calc(var(--u) * 36); image-rendering: pixelated; display: block; }
+#dlg-actions button.pickc small { color: var(--ink-dim); }
+#dlg-actions button.pickc.lockd { position: relative; }
+#dlg-actions button.pickc.lockd::after { content: ''; position: absolute; right: calc(var(--u) * 3); top: calc(var(--u) * 3); width: calc(var(--u) * 7); height: calc(var(--u) * 8); background: var(--lock) 0 0 / 100% 100%; image-rendering: pixelated; }   /* ロックしたカードは鍵（選べる） */
 #cardtip button, #dlg-actions button {
   --fr: var(--fr-btn); color: var(--ink); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace; opacity: 1;
   border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
@@ -619,6 +646,7 @@ body[data-tut="forced"] #cardtip button[data-act="1マス移動に使う"] { out
 </div>
 <div id="loading">読み込み中…（three.js をネットから読みます）</div>
 <script src="js/logic.js"></script>
+<script src="js/rules_patch.js"></script>
 <script src="js/trace.js"></script>
 <script src="js/sprites.js"></script>
 <script src="js/icons.js"></script>

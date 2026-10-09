@@ -1086,12 +1086,14 @@ function drawBadge(x, y, n, hurt) {
 // 盤の上の印は、床にぴったり重ねた板に描く（カメラが傾いても床といっしょに傾く）
 let floorOverKey = '';
 function drawFloorOver() {
-  const key = JSON.stringify([targeting, hoverTile && !busy ? [hoverTile.x, hoverTile.y] : null, st && st.player.x, st && st.player.y, busy]);
+  const key = JSON.stringify([targeting, hoverTile && !busy ? [hoverTile.x, hoverTile.y] : null, st && st.player.x, st && st.player.y, busy,
+    selected, st && st.hand.map(c => c.id), st && st.enemies.map(e => [e.x, e.y]), st && st.gameStatus, dialogOpen()]);
   if (key === floorOverKey) return;
   floorOverKey = key;
   const g = floorOverC.getContext('2d');
   g.clearRect(0, 0, 192, 192);
   if (targeting && !busy) drawTargeting(g);
+  else if (!busy) drawMoveRange(g);
   if (hoverTile && !busy) g.drawImage(spr('cursor', '0'), (hoverTile.x - 1) * T - 1, (hoverTile.y - 1) * T - 1);
   floorOverTex.needsUpdate = true;
 }
@@ -1120,6 +1122,65 @@ function drawTargeting(g) {
       g.drawImage(img, tx(p.x) + 12 + dx * 17 - 4, ty(p.y) + 12 + dy * 17 - 4);
     }
   }
+}
+// 歩ける範囲（2026-10-09 テストプレイ）：何も選んでいない手番のあいだ、手札の移動のカード（歩く・走る…）で行けるマスを薄い水色に。
+// 押すとそのマスへ（2マス先から）。行けるカードのうち、移動の数がそのマスにいちばん近いカードを自動で使う（moveChoices・pickMove。カードを選ぶ窓は前の版の名残）。
+// 1マス先は、いままでどおり十字キーと同じ自動移動（歩くがあれば歩く。なければ、いらないカードで強行移動の確認）
+function moveRange() {
+  const out = new Map();
+  if (!st || st.gameStatus !== 'PLAYING' || busy || targeting || selected || dialogOpen()) return out;
+  const p = st.player;
+  for (const cobj of st.hand) {
+    const md = HK.cardOf(cobj).moveDistance; if (!md) continue;
+    for (const d of Object.keys(DIRV)) {
+      const [dx, dy] = DIRV[d];
+      for (let n = 1; n <= md; n++) {
+        const x = p.x + dx * n, y = p.y + dy * n;
+        if (!HK.isFloor(st, { x, y }) || HK.enemyAt(st, { x, y })) break;
+        const k = `${x},${y}`; if (!out.has(k)) out.set(k, []);
+        out.get(k).push({ cobj, d, n });
+      }
+    }
+  }
+  return out;
+}
+function drawMoveRange(g) {
+  const tx = x => (x - 1) * T, ty = y => (y - 1) * T;
+  for (const k of moveRange().keys()) {
+    const [x, y] = k.split(',').map(Number);
+    g.fillStyle = 'rgba(74,163,232,0.26)'; g.fillRect(tx(x) + 1, ty(y) + 1, T - 3, T - 3);
+    g.lineWidth = 1; g.strokeStyle = 'rgba(34,27,23,0.45)'; g.strokeRect(tx(x) + 0.5, ty(y) + 0.5, T - 2, T - 2);
+    g.strokeStyle = 'rgba(74,163,232,0.85)'; g.strokeRect(tx(x) + 1.5, ty(y) + 1.5, T - 4, T - 4);
+  }
+}
+// そのマスへ行けるカード（同じ種類・同じ合成の段は1つにまとめる。まとめた中では手札の左のもの）
+function moveChoices(x, y) {
+  const seen = new Map();
+  for (const o of moveRange().get(`${x},${y}`) || []) { const k = `${o.cobj.cardId}+${o.cobj.rank || 0}`; if (!seen.has(k)) seen.set(k, o); }
+  return [...seen.values()];
+}
+function pickMove(list) {
+  const go = o => perform('play', { cardId: o.cobj.id, mode: 'effect', direction: o.d, distance: o.n });
+  if (list.length === 1) return go(list[0]);
+  return go(list.reduce((a, b) => (HK.cardOf(b.cobj).moveDistance < HK.cardOf(a.cobj).moveDistance ? b : a)));   // 聞かずに、移動の数がそのマスにいちばん近いカード（2026-10-09 ユーザー指定。下の窓は使わないが残す）
+  showDialog('どのカードを使いますか？', '<p class="hint">ほかの場所を押すとやめる</p>', list.map(o => [HK.cardOf(o.cobj).name, () => { closeDialog(); go(o); }, 'pickc']));
+  $('#dialog').dataset.backdrop = 'cancel'; $('#dialog .paper').classList.add('pick');   // 窓の外（暗い幕）を押すとやめる
+  [...$('#dlg-actions').children].forEach((b, i) => { const o = list[i], nm = document.createElement('small'); nm.className = 'mm s'; nm.textContent = cardEffect(o.cobj); b.prepend(iconCanvas(o.cobj.cardId)); b.append(nm); });
+}
+// 敵のいる階で「歩く」がないとき、となりのマスを押したら「どれで移動する？」：手札を絵・名前・効果で並べ、選んだカードで1マス（効果は出ない）。
+// 窓の外を押すとやめる。十字キーはいままでどおりの自動移動（2026-10-10 テストプレイ）
+function pickForced(d) {
+  const [dx, dy] = DIRV[d], to = { x: st.player.x + dx, y: st.player.y + dy };
+  if (!HK.isFloor(st, to) || HK.enemyAt(st, to)) { say('そっちには進めない'); bumpFace(d); return; }
+  const list = st.hand.slice();
+  showDialog('どれで移動する？', '<p class="hint">カードの効果は出ません（ほかの場所を押すとやめる）</p>',
+    list.map(c => [HK.cardOf(c).name, () => { closeDialog(); perform('play', { cardId: c.id, mode: 'forced', direction: d, distance: 1 }); }, 'pickc']));
+  $('#dialog').dataset.backdrop = 'cancel'; $('#dialog .paper').classList.add('pick');   // 5枚を横1列に並べる広い窓
+  [...$('#dlg-actions').children].forEach((b, i) => {
+    const c = list[i], nm = document.createElement('small'); nm.className = 'mm s'; nm.textContent = cardEffect(c);
+    b.prepend(iconCanvas(c.cardId)); b.append(nm);
+    if (lockedCards.has(c.id)) b.classList.add('lockd');
+  });
 }
 function drawBanner() {
   const b = view.banner, t = (clock - b.t0) / b.ms, el = document.getElementById('banner');
@@ -1572,8 +1633,8 @@ function bumpFace(d) {
 
 // ---------------------------------------------------------------- 十字キーの自動移動（元UIと同じ判断）
 function autoMove(d) {
-  const r = HK.autoMove(st, d);
-  if (!r.ok) { say(r.message.includes('カード') ? '移動に使えるカードがない' : 'そっちには進めない'); bumpFace(d); return; }
+  const r = HK.autoMove(lockedCards.size ? { ...st, hand: st.hand.filter(c => !lockedCards.has(c.id)) } : st, d);   // ロックしたカードは使わない
+  if (!r.ok) { say(r.message.includes('カード') ? (lockedCards.size ? 'ロックしていない移動のカードがない' : '移動に使えるカードがない') : 'そっちには進めない'); bumpFace(d); return; }
   const action = { cardId: r.card.id, mode: r.mode, direction: d, distance: 1 };
   if (!r.needsConfirmation) return perform('play', action);
   const name = HK.cardOf(r.card).name;
@@ -1592,7 +1653,7 @@ const $ = s => document.querySelector(s);
 // ---------------------------------------------------------------- 窓とボタンの縁（角の丸いドット絵）
 // 小さな絵を1枚描いて、CSS の border-image で9分割して伸ばす（1ドット＝1u。四隅はそのまま、辺と中は伸ばす）。
 // 外：濃い線／内側の上と左：明るい線／内側の下と右：影の線／中：地の色／下：落ち影（窓）または厚み（ボタン）
-// 窓の色の候補（W キーで切り替え）。中の色・縁の色・中の文字（dark＝白文字に黒縁、light＝紙に濃い字）
+// 窓の色の候補（切り替えのキーはなし。W は北への移動）。中の色・縁の色・中の文字（dark＝白文字に黒縁、light＝紙に濃い字）
 const CREAM = [['#fbf3e2', '#cca673'], ['#e1bc88', '#cca673']], SLATE = [['#b8c4cc', '#506573'], ['#7a8e9c', '#506573']];
 const WIN_THEMES = [      // 先頭がふだんの色（ユーザーが半透明の夜色に決定）
   { name: '半透明の夜色', bg: '#0b1120cc', rim: SLATE, shade: ['#0b1120cc', '#0b1120cc'] },
@@ -1660,6 +1721,57 @@ function cardNumber(cobj) {
   const c = HK.cardOf(cobj);
   return c.damage ? HK.damageOf(st, cobj).total : c.block || c.moveDistance || c.heal || c.score || 0;
 }
+// 手札の上の色帯：効果と、いまの数値（強化・合成・強撃こみ）。数値のないカードは効果の名前（2026-10-09 テストプレイ）
+const SCROLL_WORD = { preferWeapons: '武器選好', fuseWeapons: '武器合体', deleteCard: '削除', preferArmor: '防具選好', fuseArmor: '防具合体', preferScrolls: '巻物選好' };
+function cardEffect(cobj) {
+  const c = HK.cardOf(cobj);
+  if (c.damage) return `攻撃${HK.damageOf(st, cobj).total}`;
+  if (c.block) return `防御${c.block}`;
+  if (c.moveDistance) return `移動${c.moveDistance}`;
+  if (c.heal) return `回復${c.heal}`;
+  if (c.attackBoost) return `強撃+${c.attackBoost}`;
+  if (c.score) return `${c.score}点`;
+  if (c.ember) return '残火';
+  if (c.redraw) return '引き直し';
+  if (c.returnToSurface) return '帰還';
+  if (c.scrollEffect) return SCROLL_WORD[c.scrollEffect] || '巻物';
+  return c.type;
+}
+// 合成の段（＋2 など）：クリア演出の数字（LoRes 9 Plus Wide Bold のドット、js/ending_assets.js）を、黒の字・白の縁に塗り替えて絵の右下に（大きさは PLUS_K）
+const plusCache = new Map();
+function plusImage(rank) {
+  const A = globalThis.ENDING_ASSETS?.digits, txt = `+${rank}`;
+  if (!A) { const b = document.createElement('b'); b.className = 'plus mm s'; b.textContent = txt; return b; }
+  if (!plusCache.has(rank)) {
+    const gl = [...txt].map(ch => A.glyphs[ch]).filter(Boolean), H = 8;
+    const W = gl.reduce((w, g) => w + g[0].length - 1, 0) + 1, c = canvas(W, H), x = c.getContext('2d');
+    let ox = 0;
+    for (const g of gl) {                                   // 字の縁は1ドット重ねて詰める（クリア演出と同じ）
+      g.forEach((row, y) => [...row].forEach((ch, i) => { if (ch === '.') return; if (ch === 'K' && x.getImageData(ox + i, y, 1, 1).data[3]) return; x.fillStyle = ch === 'K' ? '#fbf3e2' : '#221b17'; x.fillRect(ox + i, y, 1, 1); }));
+      ox += g[0].length - 1;
+    }
+    plusCache.set(rank, c.toDataURL());
+  }
+  const im = new Image(); im.src = plusCache.get(rank); im.className = 'plus'; im.alt = txt;
+  const PLUS_K = 1;   // 1ドット＝何u（2倍・1.5倍も試した。2026-10-09 いまは1倍・右下・不透明度80％を試し中）
+  im.onload = () => { im.style.width = `calc(var(--u) * ${im.naturalWidth * PLUS_K})`; im.style.height = `calc(var(--u) * ${im.naturalHeight * PLUS_K})`; };
+  return im;
+}
+// カードのロック：手札の id。ロックしたカードは十字キーの自動移動で使わない（説明の窓の鍵で切り替え。保存にも入れる）
+const lockedCards = new Set();
+queueMicrotask(() => { const r = document.documentElement.style; r.setProperty('--lock', `url(${lockImage(false)})`); r.setProperty('--lock-open', `url(${lockImage(true)})`); });
+// 鍵の絵（7×8、1ドット＝1u）。open＝外したとき（つるの左が浮く）
+function lockImage(open) {
+  const rows = open ? ['.KKKKK.', '.K...K.', '.....K.', 'KKKKKKK', 'KYYYYYK', 'KYYKYYK', 'KyyKyyK', 'KKKKKKK']
+                    : ['.KKKKK.', '.K...K.', '.K...K.', 'KKKKKKK', 'KYYYYYK', 'KYYKYYK', 'KyyKyyK', 'KKKKKKK'];
+  const c = canvas(7, 8), g = c.getContext('2d'), P = { K: '#221b17', Y: '#f0b84a', y: '#ae6f47' };
+  rows.forEach((r, y) => [...r].forEach((ch, x) => { if (P[ch]) { g.fillStyle = P[ch]; g.fillRect(x, y, 1, 1); } }));
+  return c.toDataURL();
+}
+function toggleLock(id) {
+  if (lockedCards.has(id)) lockedCards.delete(id); else lockedCards.add(id);
+  globalThis.Music?.se('ui_cursor'); renderHand(); showCardTip(id); saveRun();
+}
 function pipsHtml(n) { return n <= 0 ? '' : n <= 6 ? '<i></i>'.repeat(n) : `<b>${n}</b>`; }
 function cardValue(cobj) {
   const c = HK.cardOf(cobj);
@@ -1676,17 +1788,23 @@ function renderHand(hand = st.hand, leaving = null) {
   const el = $('#hand'); el.innerHTML = '';
   hand.forEach((cobj, i) => {
     const c = HK.cardOf(cobj), b = document.createElement('button'), pos = cardPos(i, hand.length);
-    b.className = `card k-${KIND_CLASS[c.type] || 'misc'}` + (selected === cobj.id ? ' sel' : '') + (leaving === cobj.id ? ' leaving' : '');
+    const rank = cobj.rank || 0, lk = lockedCards.has(cobj.id);
+    b.className = `card k-${KIND_CLASS[c.type] || 'misc'}` + (selected === cobj.id ? ' sel' : '') + (leaving === cobj.id ? ' leaving' : '') + (lk ? ' locked' : '');
     b.dataset.id = cobj.id;
     b.style.left = `calc(var(--u) * ${pos.x})`; b.style.top = `calc(var(--u) * ${pos.y})`; b.style.setProperty('--rot', `${pos.rot}deg`);
     b.dataset.rot = pos.rot;
     b.title = `${c.name}（${cardValue(cobj)}）`;
-    b.innerHTML = `<span class="band"></span><span class="pips">${pipsHtml(cardNumber(cobj))}</span><span class="key">${i + 1}</span>`;
-    b.querySelector('.band').after(iconCanvas(cobj.cardId));
+    // 色帯＝効果といまの数値／絵＝合成の段（＋2 など）／絵の下＝カードの名前（＋は付けない）。ロックしたカードは色帯の右に鍵
+    b.innerHTML = `<span class="band"><b class="eff mm s">${esc(cardEffect(cobj))}</b>${lk ? '<i class="lock"></i>' : ''}</span>`
+      + `<span class="art"></span><span class="nm mm s">${esc(HK.cards[cobj.cardId].name)}</span><span class="key">${i + 1}</span>`;
+    b.querySelector('.art').prepend(iconCanvas(cobj.cardId));
+    if (rank) b.querySelector('.art').appendChild(plusImage(rank));
     b.onclick = () => { startAudio(); selectCard(cobj.id); };
     b.onmouseenter = () => hoverCard(cobj.id);
     b.onmouseleave = () => { clearTimeout(hoverTimer); hideCardTipSoon(); };
     el.appendChild(b);
+    const nm = b.querySelector('.nm');                     // 長い名前（引き直しの護符など7字）は、字の間を1pxずつ詰めて収める（書体のドットは崩さない）
+    for (let k = 1; k <= 3 && nm.scrollWidth > nm.clientWidth; k++) nm.style.letterSpacing = `-${k}px`;
   });
   renderPiles();
 }
@@ -2128,8 +2246,11 @@ function showCardTip(id) {
   const pred = c.damage ? `<p class="pred">いま使うと <b>${HK.damageOf(st, cobj).total}</b> ダメージ・届く距離 ${c.range}</p>` : '';
   const how = c.damage ? '<p class="how">光ったマスの敵をクリック（または矢印キー）で攻撃</p>' : directional(c) ? `<p class="how">「${c.moveDistance ? '移動に使う' : '使う'}」のあと、光ったマスを選ぶ</p>` : c.type === '財宝' ? '<p class="how">持ち帰ると得点。使うことはできない</p>' : '';
   const n = cardNumber(cobj), kc = KIND_COLOR[KIND_CLASS[c.type] || 'misc'];
-  el.innerHTML = `<div class="t">${n ? `<span class="badge mm m" style="--kc:${kc}">${n}</span>` : ''}<span class="nm mm m">${esc(c.name)}</span><small class="mm s">${esc(c.type)}</small></div>`
-    + `<div class="bd mm m"><p>${esc(c.description)}</p>${pred}${how}<div class="acts"></div></div>`;
+  const lk = lockedCards.has(cobj.id);
+  el.innerHTML = `<div class="t">${n ? `<span class="badge mm m" style="--kc:${kc}">${n}</span>` : ''}<span class="nm mm m">${esc(c.name)}</span><small class="mm s">${esc(c.type)}</small>`
+    + `<button class="lockbtn${lk ? ' on' : ''}" title="${lk ? 'ロックを外す' : 'ロックする（十字キーの自動移動で使わない）'}"><i></i></button></div>`
+    + `<div class="bd mm m"><p>${esc(c.description)}</p>${pred}${how}${lk ? '<p class="lockd">ロック中：自動移動で使わない</p>' : ''}<div class="acts"></div></div>`;
+  el.querySelector('.lockbtn').onclick = ev => { ev.stopPropagation(); startAudio(); toggleLock(cobj.id); };
   // ボタン：「使う」だけ上の行。下の行に、移動と捨てる（水色）。歩く・走るなどの移動のカードは「使う」と「1マス移動に使う」を
   // 水色の「移動に使う」1つにまとめる（2026-10-09 テストプレイ）
   const acts = el.querySelector('.acts');
@@ -2144,8 +2265,8 @@ function showCardTip(id) {
     add(r, '1マス移動に使う', () => { selected = cobj.id; startTargeting(cobj, 'forced'); hideCardTip(); renderHand(); }, 'mv');
     add(r, '捨てて引き直す', () => perform('discard', cobj.id), 'mv');
   }
-  el.style.left = 'calc(var(--u) * 357)';                // 盤の右の余白に固定（盤には被らない）
-  el.style.bottom = 'calc(var(--u) * 78)';
+  el.style.left = 'calc(var(--u) * 356)';                // 盤の右の余白の下に固定（手札の横。盤には被らない。山札などは上の「もちもの一覧」の下へ移した）
+  el.style.bottom = 'calc(var(--u) * 4)';
   void pos;
   el.classList.add('show');
 }
@@ -2338,13 +2459,14 @@ function toggleFontCmp(on = !$('#fontcmp').classList.contains('open')) {
 
 // 確認（盤の上に紙を1枚）
 function showDialog(title, html, buttons) {
-  hideCardTip();
+  hideCardTip(); delete $('#dialog').dataset.backdrop; $('#dialog .paper').classList.remove('pick');
   $('#dlg-title').textContent = title; $('#dlg-body').innerHTML = html;
   const acts = $('#dlg-actions'); acts.innerHTML = '';
   buttons.forEach(([label, fn, cls]) => { const b = document.createElement('button'); b.textContent = label; b.className = 'mm m ' + (cls || ''); b.onclick = () => { startAudio(); fn(); }; acts.appendChild(b); });
   $('#dialog').classList.add('open');
 }
 function closeDialog() { $('#dialog').classList.remove('open'); }
+$('#dialog').addEventListener('click', ev => { if (ev.target.id === 'dialog' && $('#dialog').dataset.backdrop === 'cancel') { closeDialog(); globalThis.Music?.se('ui_cancel'); } });
 const dialogOpen = () => $('#dialog').classList.contains('open');
 function cancelAll() { targeting = null; selected = null; closeDialog(); hideCardTip(); renderHand(); }
 
@@ -2522,8 +2644,14 @@ cv.addEventListener('click', ev => {
   const t = tileFromEvent(ev);
   if (!t) { if (selected || targeting) cancelAll(); return; }                 // 盤の外の余白：カードの選択を外す
   if (targeting) { if (!targetClick(t.x, t.y)) cancelAll(); return; }          // 選べないマス：選択を外す
+  if (!selected && !busy) { const ch = moveChoices(t.x, t.y); if (ch.length && ch[0].n >= 2) return pickMove(ch); }   // 歩ける範囲（光っているマス）。2マス先から。1マス先は下のいつもの自動移動（歩く、なければ十字キーと同じ選び方）
   const dx = t.x - st.player.x, dy = t.y - st.player.y;
-  if (Math.abs(dx) + Math.abs(dy) === 1 && !busy) { if (selected) cancelAll(); autoMove(dx === 1 ? 'd' : dx === -1 ? 'a' : dy === 1 ? 's' : 'w'); }
+  if (Math.abs(dx) + Math.abs(dy) === 1 && !busy) {
+    if (selected) cancelAll();
+    const d = dx === 1 ? 'd' : dx === -1 ? 'a' : dy === 1 ? 's' : 'w';
+    if (st.enemies.length && !st.hand.some(c => c.cardId === 'walk') && !globalThis.Tutorial?.active) return pickForced(d);   // 敵のいる階で「歩く」がない：どれで進むか選ぶ
+    autoMove(d);
+  }
   else if (selected) cancelAll();                                              // 関係ないマス：選択を外す
 });
 // 画面のほかの関係ないところ（上の体力・山札・ログの文字・画面の外の余白など）を押しても、カードの選択を外す
@@ -2547,7 +2675,6 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 't' || ev.key === 'T') { toggleFontCmp(); return; }
   if (ev.key === 'u' || ev.key === 'U') { previewBigCloseup(); return; }
   if ((ev.key === 'e' || ev.key === 'E') && !busy && !globalThis.Ending?.active) { previewEnding(); return; }   // クリア演出の確かめ（見本の撃破と財宝で）
-  if (ev.key === 'w' || ev.key === 'W') { say(`窓の色：${applyWinTheme(winTheme + 1).name}`); return; }
   if (ev.shiftKey && /^Digit[1-5]$/.test(ev.code)) {        // 確認用：Shift＋1〜5 … そのカードを使ったときの行き先の演出だけ見る（ルールは動かない）
     const b = document.querySelectorAll('#hand .card')[Number(ev.code.slice(5)) - 1], c = b && st.hand.find(h => h.id === Number(b.dataset.id));
     if (c) {
@@ -2595,15 +2722,18 @@ function fit() {
   document.documentElement.style.setProperty('--u', `${u}px`);
   // マルモニカの文字の大きさ：目安の大きさ（u）にいちばん近い 16px の整数倍。縁取りは書体の1ドット
   // w（OP のメニューと窓）だけは大きい方へ少し寄せる（bias）：画面の倍率が 2 をわずかに下回ったとき（1.97 など）に 32px→16px と半分にならないように
-  const snap = (px, bias = 0) => 16 * Math.max(1, Math.round(px / 16 + bias));
+  // 刻みは「画面の実際の画素」で 16 の倍数（書体のドットがにじまない）。スマホ（devicePixelRatio 2〜3）は CSS の px で 16/2・16/3 きざみに細かくなり、
+  // 横持ちの小さな画面でも字が大きくなりすぎない（2026-10-10。前は CSS の 16px が最小で、目安の倍近くになっていた）。パソコン（倍率 2 未満）は前と同じ
+  const f = Math.max(1, Math.floor(globalThis.devicePixelRatio || 1)), U16 = 16 / f;
+  const snap = (px, bias = 0) => U16 * Math.max(1, Math.round(px / U16 + bias));
   for (const [k, want] of Object.entries({ h: 24, xl: 17, t: 15, w: 12, l: 9, m: 7, s: 6 })) {   // w：OP の窓とメニューの大きめの字
     const px = snap(want * u, k === 'w' ? 0.2 : 0);
     document.documentElement.style.setProperty(`--fs-${k}`, `${px}px`); document.documentElement.style.setProperty(`--o-${k}`, `${px / 16}px`);
   }
   // 効果の数値だけは l と t のあいだの大きさ（8px きざみ。書体の1ドットが 1.5px などになり、窓の大きさによってはドットの太さが少し不ぞろいになる）
-  { const px = 8 * Math.max(2, Math.round(12 * u / 8)); document.documentElement.style.setProperty('--fs-g', `${px}px`); document.documentElement.style.setProperty('--o-g', `${px / 16}px`); }
+  { const px = U16 / 2 * Math.max(2, Math.round(12 * u / (U16 / 2))); document.documentElement.style.setProperty('--fs-g', `${px}px`); document.documentElement.style.setProperty('--o-g', `${px / 16}px`); }
   // チュートリアルの吹き出しの字（11u の目安。同じく 8px きざみ。u＝2 のときだけ 24px で書体のドットが 1.5px になる）
-  { const px = 8 * Math.max(2, Math.round(11 * u / 8)); document.documentElement.style.setProperty('--fs-b', `${px}px`); document.documentElement.style.setProperty('--o-b', `${px / 16}px`); }
+  { const px = U16 / 2 * Math.max(2, Math.round(11 * u / (U16 / 2))); document.documentElement.style.setProperty('--fs-b', `${px}px`); document.documentElement.style.setProperty('--o-b', `${px / 16}px`); }
 }
 addEventListener('resize', fit);
 
@@ -2617,7 +2747,7 @@ function saveRun() {
   if (!st || st.gameStatus !== 'PLAYING' || globalThis.Tutorial?.active) return;
   try {
     const { rng, ...state } = st; void rng;
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state, look: globalThis.HK_PLAYER?.look || null, ms: Math.round(performance.now() - runStart), savedAt: Date.now() }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state, look: globalThis.HK_PLAYER?.look || null, ms: Math.round(performance.now() - runStart), savedAt: Date.now(), locked: [...lockedCards] }));
   } catch { /* 保存できないとき（プライベートウィンドウなど）は、つづきからなし */ }
 }
 function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch { /* なし */ } }
@@ -2634,6 +2764,7 @@ function resumeRun() {
   applyLook(d.look);
   newGame();                                       // 演出・ログ・選択を片付けてから、保存した状態に差し替える
   st = { ...d.state, rng: Math.random }; runStart = performance.now() - (d.ms || 0);
+  for (const id of d.locked || []) lockedCards.add(id);
   globalThis.Music?.floor(st.floor);
   buildBackground(); syncView(true); renderStatus(); $('#hand').innerHTML = ''; animateHand({ hand: [], drawN: 99, discN: 0 });
   view.banner = { text: `B${st.floor}F`, t0: clock, ms: 1400 };
@@ -2641,7 +2772,7 @@ function resumeRun() {
 }
 function newGame() {
   globalThis.Tutorial?.stop();
-  st = HK.newRun(); runStart = performance.now();
+  st = HK.newRun(); runStart = performance.now(); lockedCards.clear();
   globalThis.Music?.floor(st.floor);
   logHistory.length = 0; if (logOpen()) renderLogPanel();
   targeting = null; selected = null; queued = null; busy = false;

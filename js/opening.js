@@ -22,7 +22,7 @@ const PEOPLE = {
   3: { id: '南国人', text: 'にゃんにゃん共和国における種族の一つ。バイオテクノロジーと食の種族。' },
   4: { id: 'はてない国人', text: '頑健な肉体と強靭な精神力で知られる人。はてない国の住人。' },
   5: { id: '東国人', text: 'わんわん帝国の種族の一つ。越前藩国などに住む都市住民や、暁の円卓や神聖巫連盟などに住む田舎の住民がいる。' },
-  6: { id: '森国人', text: 'にゃんにゃん共和国のかのものを封じる森林に住む人々のこと。種族の一つ。耳が長い。' },
+  6: { id: '森国人', text: 'にゃんにゃん共和国の森林に住む人々のこと。耳が長い。' },
 };
 const ORDER = [1, 2, 3, 4, 6, 5];
 const MENU = [['new', 'はじめから'], ['cont', 'つづきから'], ['help', '遊び方'], ['score', 'ハイスコア'], ['treasure', 'おたから']];
@@ -45,6 +45,8 @@ const frameNo = now => Math.floor((now - t0) / FR);
 function setMode(m) {
   mode = m; t0 = performance.now();
   el.back?.classList.toggle('show', ['select', 'toCreate', 'create', 'toSelect'].includes(m));   // 種族えらび・キャラメイクの間は左上に「タイトルへ」
+  // 種族えらびの間は、画面の上のまん中に「群衆から種族をえらんでください。」（2026-10-09 もどした。窓の中だと窓が画面からはみ出すので、群衆の上に）
+  if (el.hint) { el.hint.textContent = '群衆から種族をえらんでください。'; el.hint.classList.toggle('show', m === 'select'); }
 }
 const save = l => { try { localStorage.setItem('honekko.look', JSON.stringify(l)); } catch {} };
 const load = () => { try { return JSON.parse(localStorage.getItem('honekko.look')); } catch { return null; } };
@@ -92,8 +94,9 @@ function draw(now) {
     market(1, 1 - ease(k / 40));                              // 乗算がゆっくり抜けて明るくなる
     thinText(P.thin_dx[p]); sheet(img.pressL, P.letters, p, 6); sheet(img.pressD, P.deco, p, 4);
   } else if (mode === 'select') {
-    market(1, 0);
     const who = locked || hover;
+    market(1, who && img['cut' + who] ? 1 : 0);                // 選んだ人のほかは乗算で暗く（2026-10-09）
+    if (who && img['cut' + who]) g.drawImage(img['cut' + who], 0, 0, CW, CH);   // 選んだ人だけ、明るいまま
     if (who && img['ol' + who]) g.drawImage(img['ol' + who], 0, 0, CW, CH);
   } else if (mode === 'leaving') {
     drawLeaving(k);
@@ -495,8 +498,20 @@ async function prepare() {
     'market', 'title_intro_letters', 'title_intro_deco', 'title_idle_deco', 'title_press_letters', 'title_press_deco', 1, 2, 3, 4, 5, 6,
   ].map(n => loadImg(P + (typeof n === 'number' ? `outline_${n}` : n) + '.png')));
   Object.assign(img, { market, introL, introD, idleD, pressL, pressD });
-  ols.forEach((o, i) => { img['ol' + (i + 1)] = o; });
+  ols.forEach((o, i) => { img['ol' + (i + 1)] = o; img['cut' + (i + 1)] = personCut(i + 1, o); });
   try { await document.fonts.load("100 29px 'IBM Plex Sans JP'", '電網適応アイドレス'); } catch {}
+}
+// 種族えらびで、選んだ人だけ明るく見せるための切り抜き（市場の絵の、その人の白い縁の内側だけ）。
+// 当たり（HIT）は白い縁の内側を塗ったもの（切れ目と画面の下の端を閉じ、手前の人が上。OP_20261008/作業/ゲームへ書き出し.py）なので、その人の当たりから縁を除いた所
+function personCut(n, ol) {
+  const W = HIT.w, H = HIT.h, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(ol, 0, 0, W, H); const line = x.getImageData(0, 0, W, H).data;
+  x.clearRect(0, 0, W, H); x.drawImage(img.market, 0, 0, W, H);
+  const d = x.getImageData(0, 0, W, H);
+  for (let i = 0; i < W * H; i++) if (HIT.px[i] !== n || line[i * 4 + 3]) d.data[i * 4 + 3] = 0;
+  x.putImageData(d, 0, 0);
+  return c;
 }
 async function show() {     // タイトルから（メニューの「タイトルへ」、エンディングのあと、ゲームオーバーの「タイトルへ」からも）
   if (!T) await ready;
