@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ほねっこの迷宮 3D版</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=IBM+Plex+Sans+JP:wght@100&display=swap" rel="stylesheet">
+<style>
+/* 色はすべて共有32色 v2 から */
+:root {
+  --u: 2px;
+  --ink: #fbf3e2; --ink-dim: #b8c4cc; --gold: #f0b84a;
+  --paper: #f2dcb4; --paper-2: #e1bc88; --paper-ink: #3f2d21; --paper-dim: #8a5a38;
+  --edge: #221b17; --slate: #2c3a48; --slate-2: #506573; --slate-3: #7a8e9c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #0b1120; color: var(--ink); overflow: hidden; }
+body { display: grid; place-items: center; font-family: 'DotGothic16', 'MS Gothic', 'Osaka-Mono', monospace; }
+button { font: inherit; color: inherit; cursor: pointer; }
+#stage { position: relative; width: 960px; height: 540px; overflow: hidden; }
+#view, #over { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+/* 瀕死のとき、画面の四隅に血のあと（不透明度30％。点滅させず、ゆっくり出てゆっくり消える） */
+#blood { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; pointer-events: none; opacity: 0; transition: opacity .8s; }
+#blood.on { opacity: .3; transition: opacity .3s; }
+#blood.on.dim { opacity: .1; transition: opacity 2.5s; }
+canvas.icon, canvas.px, #portrait { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+/* 左上：階（階段の札と数字）、その下にターンと得点 */
+#hud-top { position: absolute; left: calc(var(--u) * 10); top: calc(var(--u) * 9); pointer-events: none; text-shadow: 0 calc(var(--u) * 1) 0 #000; }
+.floor-row { display: flex; align-items: center; gap: calc(var(--u) * 7); }
+.floor-ic { width: calc(var(--u) * 22); height: calc(var(--u) * 22); background: var(--slate); border: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 0 0 calc(var(--u) * 1) var(--slate-2); display: grid; place-items: center; }
+.floor-ic canvas { width: calc(var(--u) * 14); height: calc(var(--u) * 14); }
+#floor { line-height: 1; }
+/* 階・ターン・スコアの下地：乗算で少し暗くして読みやすく（2026-10-09 テストプレイ）。角は3ドット落とす */
+#hud-shade { position: absolute; left: calc(var(--u) * 4); top: calc(var(--u) * 4); width: calc(var(--u) * 80); height: calc(var(--u) * 62); pointer-events: none;
+  background: #506573; mix-blend-mode: multiply;
+  clip-path: polygon(calc(var(--u) * 3) 0, calc(100% - var(--u) * 3) 0, 100% calc(var(--u) * 3), 100% calc(100% - var(--u) * 3), calc(100% - var(--u) * 3) 100%, calc(var(--u) * 3) 100%, 0 calc(100% - var(--u) * 3), 0 calc(var(--u) * 3)); }
+.stat-row { display: flex; align-items: center; gap: calc(var(--u) * 5); margin-top: calc(var(--u) * 7); line-height: 1; }
+.stat-row + .stat-row { margin-top: calc(var(--u) * 5); }
+.stat-row canvas { width: calc(var(--u) * 9); height: calc(var(--u) * 9); }
+.stat-row .lab { width: calc(var(--u) * 26); color: var(--ink-dim); margin-left: calc(var(--u) * 2); }   /* 左に「ターン」「スコア」（2026-10-09） */
+
+/* 左：直近のできごと（枠で囲まず、文字だけで流れて消える） */
+#log { position: absolute; left: calc(var(--u) * 12); top: calc(var(--u) * 82); width: calc(var(--u) * 116); display: flex; flex-direction: column; gap: calc(var(--u) * 3); pointer-events: none; }
+#log div { line-height: 1.3; color: var(--ink-dim); transition: opacity .6s, transform .2s; }
+#log div.new { opacity: 0; transform: translateY(calc(var(--u) * 3)); }
+#log div.old { opacity: 0; }
+
+/* 左端：ログの収納タブ（押すと、これまでのできごとを読める） */
+#log-tab {
+  position: absolute; left: 0; top: calc(var(--u) * 76); width: calc(var(--u) * 9); height: calc(var(--u) * 30); padding: 0;
+  background: var(--slate); border: calc(var(--u) * 1) solid var(--edge); border-left: 0; box-shadow: inset calc(var(--u) * -1) 0 0 var(--slate-2);
+  display: grid; place-items: center; z-index: 7;
+}
+#log-tab i { display: block; width: calc(var(--u) * 4); height: calc(var(--u) * 14); background:
+  linear-gradient(var(--ink-dim) 0 0) 0 0 / 100% calc(var(--u) * 1) no-repeat, linear-gradient(var(--ink-dim) 0 0) 0 calc(var(--u) * 4) / 70% calc(var(--u) * 1) no-repeat,
+  linear-gradient(var(--ink-dim) 0 0) 0 calc(var(--u) * 8) / 100% calc(var(--u) * 1) no-repeat, linear-gradient(var(--ink-dim) 0 0) 0 calc(var(--u) * 12) / 55% calc(var(--u) * 1) no-repeat; }
+#log-tab:hover i, #log-tab.open i { filter: brightness(1.4); }
+#log-tab.open { left: calc(var(--u) * 122); }
+#log-panel {
+  position: absolute; left: 0; top: calc(var(--u) * 64); width: calc(var(--u) * 122); height: calc(var(--u) * 128); display: none; z-index: 7;
+  background: #0b1120ee; border: calc(var(--u) * 1) solid var(--edge); border-left: 0; box-shadow: inset calc(var(--u) * -1) 0 0 var(--slate-2);
+  padding: calc(var(--u) * 5) calc(var(--u) * 6); overflow-y: auto; font-size: calc(var(--u) * 5.6); line-height: 1.45; color: var(--ink-dim);
+}
+#log-panel.open { display: block; }
+#log-panel .fl { color: var(--gold); margin: calc(var(--u) * 3) 0 calc(var(--u) * 1); }
+#log-panel .ln span { color: #6e655a; margin-right: calc(var(--u) * 3); }
+#log-panel .empty { color: #6e655a; }
+body.log-open #log { opacity: 0; }
+
+/* 右上：メニュー */
+#menu-btn {
+  position: absolute; right: calc(var(--u) * 10); top: calc(var(--u) * 9); width: calc(var(--u) * 22); height: calc(var(--u) * 22);
+  background: var(--slate); border: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 0 0 calc(var(--u) * 1) var(--slate-2);
+  display: grid; place-items: center; padding: 0;
+}
+#menu-btn i, #menu-btn i::before, #menu-btn i::after { display: block; width: calc(var(--u) * 10); height: calc(var(--u) * 2); background: var(--ink-dim); position: relative; }
+#menu-btn i::before, #menu-btn i::after { content: ''; position: absolute; left: 0; }
+#menu-btn i::before { top: calc(var(--u) * -4); } #menu-btn i::after { top: calc(var(--u) * 4); }
+#menu-btn:hover i, #menu-btn:hover i::before, #menu-btn:hover i::after { background: var(--ink); }
+
+/* 左下：顔 */
+/* 顔グラ（96×96ドット・背景透過）を枠なしで等倍に置く。胸元の切れ目（絵の下3ドットは透明）を画面の下端にそろえる。動きは js/face_anim.js */
+#hud-me { position: absolute; left: calc(var(--u) * 4); bottom: calc(var(--u) * -3); pointer-events: none; }
+.face { width: calc(var(--u) * 96); height: calc(var(--u) * 96); }
+#portrait { width: 100%; height: 100%; display: block; }
+
+/* 上辺の真ん中：体力と防御（原作に近い並べ方。盤と同じ幅の長い棒、その下に効果） */
+#status { position: absolute; left: 50%; top: calc(var(--u) * 2); width: calc(var(--u) * 192); transform: translateX(-50%); pointer-events: none; text-shadow: 0 calc(var(--u) * 1) 0 #000; }
+.st-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; min-height: calc(var(--u) * 8); }
+.st-row .hp-lab { justify-self: start; }
+.st-row .blk { justify-self: center; }
+.blk b { color: var(--ink-dim); }
+.hp-lab { line-height: 1; color: var(--ink); }
+.hp-lab b { color: var(--ink-dim); margin-right: calc(var(--u) * 3); }
+.bar { width: 100%; height: calc(var(--u) * 7); margin-top: calc(var(--u) * 1); background: #221b17; border: calc(var(--u) * 1) solid #0b1120; position: relative; box-shadow: inset 0 0 0 calc(var(--u) * 1) #4a4640; }
+/* ダメージを受けたとき：棒を小刻みに揺さぶる（点滅はさせない）。減っていく先から粒が飛ぶ（#hp-fx） */
+.bar.hit { animation: barhit .3s linear; }
+@keyframes barhit {
+  0% { transform: translate(0, 0); } 12% { transform: translate(calc(var(--u) * -2), calc(var(--u) * 1)); } 25% { transform: translate(calc(var(--u) * 2), calc(var(--u) * -1)); }
+  40% { transform: translate(calc(var(--u) * -1), calc(var(--u) * 1)); } 55% { transform: translate(calc(var(--u) * 1), 0); } 75% { transform: translate(calc(var(--u) * -1), 0); } 100% { transform: translate(0, 0); }
+}
+#hp-fx { position: absolute; left: calc(var(--u) * -20); top: calc(var(--u) * -20); width: calc(var(--u) * 232); height: calc(var(--u) * 64); image-rendering: pixelated; pointer-events: none; }
+#hp-bar { position: absolute; inset: calc(var(--u) * 1) auto calc(var(--u) * 1) calc(var(--u) * 1); max-width: calc(100% - var(--u) * 2); background: #d24a3c; box-shadow: inset 0 calc(var(--u) * 1) 0 #e7a08a; transition: width .25s steps(6); }
+.blk { display: flex; align-items: center; gap: calc(var(--u) * 3); line-height: 1; color: var(--ink-dim); }
+.blk canvas { width: calc(var(--u) * 7); height: calc(var(--u) * 8); opacity: .6; }
+.blk.on { color: var(--ink); } .blk.on canvas { opacity: 1; }
+#effects { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(var(--u) * 2); margin-top: calc(var(--u) * 2); }
+#effects span { font-size: calc(var(--u) * 5.5); color: #f0b84a; border: calc(var(--u) * 1) solid #5c422c; padding: 0 calc(var(--u) * 2); background: #221b17e6; }
+
+/* 画面中央のひとこと（「そっちには進めない」など）。文字は書体本来の大きさで描いてから整数倍に拡大して、ドットをくっきり出す。
+   点滅させず、すっと出てゆっくり消える */
+@font-face { font-family: 'MaruMonica'; src: url('fonts/x12y16pxMaruMonica.ttf'); }
+#say { position: absolute; left: 50%; top: calc(var(--u) * 88); transform: translate(-50%, -50%); z-index: 5; pointer-events: none; image-rendering: pixelated; opacity: 0; transition: opacity .35s; }
+#say.show { opacity: .88; transition: opacity .08s; }     /* ほんの少し透かして、画面になじませる */
+/* 文字の下の影（乗算で下の床を暗くする） */
+#say-shadow { position: absolute; left: 50%; top: calc(var(--u) * 88); transform: translate(-50%, -50%); z-index: 5; pointer-events: none; mix-blend-mode: multiply; opacity: 0; transition: opacity .35s; }
+#say-shadow.show { opacity: 1; transition: opacity .08s; }
+/* 画面の文字（マルモニカ・黒縁取り・少し透かす）。ドット書体なので、大きさは fit() で書体本来の 16px の整数倍にそろえ（--fs-*）、
+   縁取りは書体の1ドットぶんの太さ（--o-*）で8方向に引く。ダメージの数字と、紙の上の小さな文字はそのまま */
+.mm { font-family: 'MaruMonica', 'DotGothic16', monospace; font-weight: normal; line-height: 1; opacity: .9; letter-spacing: 0;
+  text-shadow: calc(var(--o) * -1) calc(var(--o) * -1) 0 #0b1120, 0 calc(var(--o) * -1) 0 #0b1120, var(--o) calc(var(--o) * -1) 0 #0b1120, calc(var(--o) * -1) 0 0 #0b1120,
+    var(--o) 0 0 #0b1120, calc(var(--o) * -1) var(--o) 0 #0b1120, 0 var(--o) 0 #0b1120, var(--o) var(--o) 0 #0b1120; }
+.mm.h { font-size: var(--fs-h); --o: var(--o-h); } .mm.xl { font-size: var(--fs-xl); --o: var(--o-xl); } .mm.t { font-size: var(--fs-t); --o: var(--o-t); }
+.mm.g { font-size: var(--fs-g); --o: var(--o-g); } .mm.w { font-size: var(--fs-w); --o: var(--o-w); } .mm.b { font-size: var(--fs-b); --o: var(--o-b); } .mm.l { font-size: var(--fs-l); --o: var(--o-l); } .mm.m { font-size: var(--fs-m); --o: var(--o-m); } .mm.s { font-size: var(--fs-s); --o: var(--o-s); line-height: 1.3; }
+/* 書体くらべ（T キー） */
+#fontcmp { position: absolute; left: 50%; top: calc(var(--u) * 40); transform: translateX(-50%); width: calc(var(--u) * 230); display: none; z-index: 9;
+  background: #0b1120e6; border: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 0 0 calc(var(--u) * 1) var(--slate-2); padding: calc(var(--u) * 5); }
+#fontcmp.open { display: block; }
+#fontcmp .h { font-size: calc(var(--u) * 5.5); color: var(--ink-dim); margin-bottom: calc(var(--u) * 4); }
+#fontcmp button { display: grid; grid-template-columns: calc(var(--u) * 62) 1fr; align-items: center; width: 100%; padding: calc(var(--u) * 3) calc(var(--u) * 4); margin-bottom: calc(var(--u) * 2);
+  background: #18222d; border: calc(var(--u) * 1) solid #2c3a48; text-align: left; font-size: calc(var(--u) * 5.5); color: var(--ink-dim); }
+#fontcmp button.on { border-color: var(--gold); color: var(--ink); }
+#fontcmp canvas { image-rendering: pixelated; justify-self: center; }
+
+/* 右下：山札と捨て札（札の束） */
+#piles { position: absolute; right: calc(var(--u) * 8); bottom: calc(var(--u) * 4); display: flex; gap: calc(var(--u) * 8); align-items: flex-end; }
+.pile { position: relative; width: calc(var(--u) * 36); text-align: center; }
+.stack { position: relative; height: calc(var(--u) * 48); }
+.stack i { position: absolute; left: 0; width: calc(var(--u) * 33); height: calc(var(--u) * 45); border: calc(var(--u) * 1) solid var(--edge); }
+#deck .stack i { background: #425c8d var(--back-pile) 0 0 / 100% 100% no-repeat border-box; image-rendering: pixelated; }
+#deck .stack i:nth-child(1) { top: calc(var(--u) * 3); left: calc(var(--u) * 3); }
+#deck .stack i:nth-child(2) { top: calc(var(--u) * 1.5); left: calc(var(--u) * 1.5); }
+#deck .stack i:nth-child(3) { top: 0; }
+#disc .stack i { background: var(--paper); box-shadow: inset 0 0 0 calc(var(--u) * 1) #fbf3e2; }
+#disc .stack i:nth-child(1) { top: calc(var(--u) * 3); left: calc(var(--u) * 3); background: var(--paper-2); }
+#disc .stack i:nth-child(2) { top: 0; }
+#disc-face { position: absolute; left: calc(var(--u) * 1); top: calc(var(--u) * 7); width: calc(var(--u) * 32); display: grid; place-items: center; }
+#disc-face canvas { width: calc(var(--u) * 27); height: calc(var(--u) * 27); display: block; }
+.pile.empty .stack i { opacity: .25; }
+.pile.empty #disc-face { display: none; }
+.pile b { display: block; margin-top: calc(var(--u) * 3); }
+.pile small { display: block; margin-top: calc(var(--u) * 1); color: var(--ink-dim); white-space: nowrap; }
+/* 除外の束（小さめ。灰色に焼けたカード）。押すと除外したカードの一覧 */
+.pile.small { width: calc(var(--u) * 24); cursor: pointer; }
+.pile.small .stack { height: calc(var(--u) * 33); }
+.pile.small .stack i { width: calc(var(--u) * 21); height: calc(var(--u) * 30); background: #4a4640; box-shadow: inset 0 0 0 calc(var(--u) * 1) #6e655a, inset 0 calc(var(--u) * -6) 0 #221b17aa; }
+.pile.small .stack i:nth-child(1) { top: calc(var(--u) * 2); left: calc(var(--u) * 2); background: #2c3a48; }
+.pile.small .stack i:nth-child(2) { top: 0; }
+.pile.small:hover .stack i:nth-child(2) { box-shadow: inset 0 0 0 calc(var(--u) * 1) #a19077, inset 0 calc(var(--u) * -6) 0 #221b17aa; }
+
+/* 手札：盤の手前に半分しまってある。色の帯・大きな絵・値の点 */
+.card {
+  position: absolute; width: calc(var(--u) * 42); height: calc(var(--u) * 60); padding: 0;
+  background: var(--paper); color: var(--paper-ink); border: calc(var(--u) * 1) solid var(--edge);
+  box-shadow: inset 0 0 0 calc(var(--u) * 1) #fbf3e2, 0 calc(var(--u) * 2) 0 #0009;
+  display: flex; flex-direction: column; align-items: center;
+  transition: transform .09s steps(3), opacity .15s, translate .14s ease-out;
+}
+.card .band { width: 100%; height: calc(var(--u) * 9); background: var(--kc, #6e655a); border-bottom: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 calc(var(--u) * 1) 0 #fbf3e255, inset 0 calc(var(--u) * -2) 0 #0003; }
+.card .icon { width: calc(var(--u) * 36); height: calc(var(--u) * 36); margin: 0 0 calc(var(--u) * 1); }   /* 絵は18×18（外周の黒を含む）を2倍 */
+.card .pips { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(var(--u) * 1); width: calc(var(--u) * 30); min-height: calc(var(--u) * 8); }
+.card .pips i { width: calc(var(--u) * 3); height: calc(var(--u) * 3); background: var(--paper-ink); }
+.card .pips b { font-weight: normal; font-size: calc(var(--u) * 7); line-height: 1; }
+.card .key { position: absolute; right: calc(var(--u) * 3); bottom: calc(var(--u) * 3); font-size: calc(var(--u) * 5); color: #3f2d2155; }
+/* 扇形に持つ：カードごとの傾き（--rot）。手をかざすと、その傾きの向きのまま持ち上がる */
+.card { transform: rotate(var(--rot, 0deg)); transform-origin: 50% 85%; }
+.card:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -20)); z-index: 2; }
+.card.sel { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); outline: calc(var(--u) * 1) solid var(--gold); z-index: 1; }
+.card.sel:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -20)); }
+.card.leaving { opacity: 0; transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -30)); }
+.k-move { --kc: #5c7236; } .k-atk { --kc: #8f2f2b; } .k-def { --kc: #425c8d; }
+.k-food { --kc: #cca673; } .k-potion { --kc: #d24a3c; } .k-treasure { --kc: #f0b84a; }
+.k-scroll { --kc: #6e655a; } .k-charm { --kc: #ae6f47; } .k-misc { --kc: #506573; }
+
+/* 行き先の演出：ゲームの解像度で描いたカード（.cardfx）と、粒の層（#card-fx） */
+.cardfx { position: absolute; image-rendering: pixelated; pointer-events: none; z-index: 5; transform-origin: 50% 50%; }
+/* カードを使って変わった数値（防御＋4 など）。演出のカードのすぐ右に、縦に並べる */
+.card-gain { position: absolute; z-index: 6; pointer-events: none; display: flex; flex-direction: column; gap: calc(var(--u) * 2); white-space: nowrap; }
+.card-gain b { font-weight: normal; }
+#card-fx { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; z-index: 6; }
+/* 飛んでいくカードの裏面（山札と同じ絵） */
+/* カードの裏面：木瓜形の紋のドット絵（js/cardback.js、地はフードの青）。42×60 の絵を1ドット＝u で敷く */
+.card-back { background: #425c8d var(--back-card) 0 0 / 100% 100% no-repeat border-box; image-rendering: pixelated; border: calc(var(--u) * 1) solid var(--edge); box-shadow: 0 calc(var(--u) * 2) 0 #0009; }
+.ghost.card:hover { transform: rotate(var(--rot, 0deg)); }
+/* マス（向き・攻撃の範囲）を選んでいる間：ほかのカードは色の帯だけ見えるまで沈み、選んだカードも盤にかからない高さまで下がる。
+   沈んだ帯に手をかざすと、そのカードだけ浮いて選び直せる */
+#hand.aiming .card:not(.sel) { translate: 0 calc(var(--u) * 30); }
+#hand.aiming .card:not(.sel):hover { translate: 0 0; }
+#hand.aiming .card.sel { translate: 0 calc(var(--u) * 10); transform: rotate(var(--rot, 0deg)); }
+#hand.aiming .card.sel:hover { translate: 0 0; transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); }
+
+/* カードの説明（手をかざしたときだけ。盤の外の余白に、文字は小さめ） */
+/* 角の丸いドット絵の縁（js の pixFrame が描く絵を9分割で伸ばす。--fr-*-s は辺の太さ、--fr-*-b は下の辺＋影の太さ。単位はドット＝u） */
+.pixwin, #cardtip, #dialog .paper {
+  background: none; box-shadow: none; border-style: solid; border-color: transparent;
+  border-width: calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-b));
+  border-image: var(--fr-paper) var(--fr-paper-s) var(--fr-paper-s) var(--fr-paper-b) fill / calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-s)) calc(var(--u) * var(--fr-paper-b)) stretch;
+  image-rendering: pixelated;
+  /* 中の色（縁の絵の真ん中は抜いてあり、ここが見える。W キーで候補を切り替え） */
+  background: var(--win-bg, #0b1120cc) padding-box;
+}
+/* 名札（暗い板）：左に数字の札、名前、右に種類 */
+#cardtip .t, #dlg-title {
+  display: flex; align-items: center; gap: calc(var(--u) * 3); color: var(--ink);
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-plate-s));
+  border-image: var(--fr-plate) var(--fr-plate-s) fill / calc(var(--u) * var(--fr-plate-s)) stretch; image-rendering: pixelated;
+  margin: 0 0 calc(var(--u) * 3); padding: 0 calc(var(--u) * 1); min-height: calc(var(--u) * 6);
+}
+#cardtip .t .nm { flex: 1; }
+#cardtip .t small { color: var(--ink-dim); margin: 0; font-size: var(--fs-s); }
+#cardtip .t .badge { min-width: calc(var(--u) * 9); text-align: center; padding: calc(var(--u) * 1) calc(var(--u) * 1) 0; margin-left: calc(var(--u) * -2);
+  background: var(--kc); box-shadow: 0 0 0 calc(var(--u) * 1) #221b17, inset 0 calc(var(--u) * 1) 0 #fbf3e255; }
+#cardtip .bd { padding: 0 calc(var(--u) * 1); }
+#cardtip {
+  position: absolute; width: calc(var(--u) * 117); display: none; z-index: 6;
+  color: var(--paper-ink);
+  padding: 0 calc(var(--u) * 1) 0; font-size: calc(var(--u) * 5.2); line-height: 1.45;
+}
+#cardtip.show { display: block; }
+/* 中の文字：マルモニカ・白（生成り）に黒縁。明るい紙のときだけ、縁なしの濃い字 */
+#cardtip, #dialog .paper { color: var(--ink); }
+#cardtip .bd { line-height: 1.35; opacity: 1; }
+#cardtip p { margin: 0 0 calc(var(--u) * 2); }
+#cardtip .pred b { color: var(--gold); font-weight: normal; }
+#cardtip .how { color: var(--ink-dim); }
+#dlg-body { font-family: 'MaruMonica', 'DotGothic16', monospace; font-size: var(--fs-m); --o: var(--o-m); line-height: 1.35;
+  text-shadow: calc(var(--o) * -1) calc(var(--o) * -1) 0 #0b1120, 0 calc(var(--o) * -1) 0 #0b1120, var(--o) calc(var(--o) * -1) 0 #0b1120, calc(var(--o) * -1) 0 0 #0b1120,
+    var(--o) 0 0 #0b1120, calc(var(--o) * -1) var(--o) 0 #0b1120, 0 var(--o) 0 #0b1120, var(--o) var(--o) 0 #0b1120; }
+#dlg-body .hint, #dlg-body .log { color: var(--ink-dim); font-size: inherit; }
+.win-light #cardtip, .win-light #dialog .paper { color: var(--paper-ink); }
+.win-light #cardtip .bd, .win-light #dlg-body, .win-light #cardtip .bd .mm { text-shadow: none; }
+.win-light #cardtip .how, .win-light #dlg-body .hint, .win-light #dlg-body .log { color: var(--paper-dim); }
+.win-light #cardtip .pred b { color: #8f2f2b; }
+#cardtip .acts { display: flex; flex-direction: column; gap: calc(var(--u) * 3); margin-top: calc(var(--u) * 3); }
+#cardtip .acts .row { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 3); }
+#cardtip .mv { --fr: var(--fr-mv); color: #fbf3e2; }
+#cardtip .mv:hover { --fr: var(--fr-mv-h); }
+/* 確認の紙に出すカード（「このカードで歩く？」）：絵と名前 */
+/* 音量の目盛り（10個の四角。点いている所まで） */
+#dlg-body .vol { display: flex; flex-direction: column; gap: calc(var(--u) * 6); margin: calc(var(--u) * 2) 0 calc(var(--u) * 2); }
+#dlg-body .vrow { display: flex; align-items: center; gap: calc(var(--u) * 3); }
+#dlg-body .vrow > span:first-child { width: calc(var(--u) * 30); }
+#dlg-body .vrow .bar { display: flex; gap: calc(var(--u) * 2); }
+#dlg-body .vrow .bar i { width: calc(var(--u) * 7); height: calc(var(--u) * 9); background: #2c3a48; box-shadow: inset 0 0 0 calc(var(--u) * 1) #506573; cursor: pointer; }
+#dlg-body .vrow .bar i.on { background: #4aa3e8; box-shadow: inset 0 0 0 calc(var(--u) * 1) #b8c4cc; }
+#dlg-body .vrow .bar i:hover { box-shadow: inset 0 0 0 calc(var(--u) * 1) var(--gold); }
+#dlg-body .vrow .step { color: var(--ink); background: #2c3a48; border: calc(var(--u) * 1) solid #221b17; padding: 0 calc(var(--u) * 2); cursor: pointer; }
+#dlg-body .vrow .step:hover { background: #506573; }
+#dlg-body .vrow .n { width: calc(var(--u) * 10); text-align: right; font-weight: normal; color: var(--gold); }
+#dlg-body .dlg-card { display: flex; align-items: center; gap: calc(var(--u) * 4); margin: 0 0 calc(var(--u) * 3); color: var(--gold); }
+#dlg-body .dlg-card canvas { width: calc(var(--u) * 36); height: calc(var(--u) * 36); image-rendering: pixelated; }
+#cardtip button, #dlg-actions button {
+  --fr: var(--fr-btn); color: var(--ink); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace; opacity: 1;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
+  border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
+  padding: 0 calc(var(--u) * 1); font-size: var(--fs-m); line-height: 1.2;
+}
+#cardtip button:hover, #dlg-actions button:hover { --fr: var(--fr-btn-h); }
+#cardtip .primary, #dlg-actions .primary { --fr: var(--fr-pri); color: #fbf3e2; }
+#cardtip .primary:hover, #dlg-actions .primary:hover { --fr: var(--fr-pri-h); }
+/* 押したときは厚みのぶん沈む */
+#cardtip button:active, #dlg-actions button:active { translate: 0 calc(var(--u) * 1); }
+
+
+/* マスの説明 */
+/* マスの説明：窓と同じ色の小さなドット絵の吹き出し。文字はマルモニカ白＋黒縁 */
+#tip { position: absolute; pointer-events: none; display: none; max-width: calc(var(--u) * 130); z-index: 5; color: var(--ink); line-height: 1.3; opacity: 1;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-tip-s)) calc(var(--u) * var(--fr-tip-s)) calc(var(--u) * var(--fr-tip-b));
+  border-image: var(--fr-tip) var(--fr-tip-s) var(--fr-tip-s) var(--fr-tip-b) fill / calc(var(--u) * var(--fr-tip-s)) calc(var(--u) * var(--fr-tip-s)) calc(var(--u) * var(--fr-tip-b)) stretch;
+  image-rendering: pixelated; background: var(--win-bg, #0b1120cc) padding-box; padding: 0 calc(var(--u) * 1); }
+#tip.show { display: block; }
+#tip b { font-weight: normal; color: var(--gold); }
+.win-light #tip { color: var(--paper-ink); text-shadow: none; }
+.win-light #tip b { color: #8f2f2b; }
+
+/* 持ち物：右上の袋（メニューの左。説明の窓と重ならない所）と、所持カードの一覧（画面全体に暗い乗算を敷く） */
+#pack-btn { position: absolute; right: calc(var(--u) * 38); top: calc(var(--u) * 4); display: flex; align-items: center; gap: calc(var(--u) * 3); padding: 0; background: none; border: 0; box-shadow: none; cursor: pointer; }
+#pack-btn canvas { width: calc(var(--u) * 30); height: calc(var(--u) * 31); display: block; }
+#pack-btn .lab { color: var(--ink-dim); white-space: nowrap; }   /* 袋の横に「もちもの一覧」 */
+#pack-btn:hover .lab { color: var(--ink); }
+#pack-btn:hover { translate: 0 calc(var(--u) * -1); filter: brightness(1.12); }
+#pack { position: absolute; inset: 0; display: none; cursor: pointer; }   /* z-index を付けない（付けると中で重なりが閉じて、乗算が下の画面にかからない） */
+#pack.open { display: block; }
+#pack .shade { position: absolute; inset: 0; z-index: 9; background: #2c3a48; mix-blend-mode: multiply; }
+#pack .box { position: absolute; z-index: 9; left: calc(var(--u) * 40); right: calc(var(--u) * 40); top: calc(var(--u) * 18); bottom: calc(var(--u) * 12); display: flex; flex-direction: column; gap: calc(var(--u) * 6); color: var(--ink); }
+#pack .hd { color: var(--gold); text-align: center; }
+#pack .grid { flex: 1; display: flex; flex-wrap: wrap; align-content: flex-start; justify-content: center; gap: calc(var(--u) * 4); overflow: auto; }
+#pack .mini { position: relative; width: calc(var(--u) * 26); height: calc(var(--u) * 36); background: var(--paper); border: calc(var(--u) * 1) solid var(--edge);
+  box-shadow: inset 0 0 0 calc(var(--u) * 1) #fbf3e2, 0 calc(var(--u) * 2) 0 #0009; display: flex; flex-direction: column; align-items: center; color: var(--paper-ink); }
+#pack .mini.hand { outline: calc(var(--u) * 1) solid var(--gold); }
+#pack .mini:hover { translate: 0 calc(var(--u) * -2); }
+#pack .mini .band { width: 100%; height: calc(var(--u) * 5); background: var(--kc, #6e655a); border-bottom: calc(var(--u) * 1) solid var(--edge); }
+#pack .mini .icon { width: calc(var(--u) * 18); height: calc(var(--u) * 18); margin: calc(var(--u) * 2) 0 calc(var(--u) * 1); image-rendering: pixelated; }
+#pack .mini .pips { display: flex; flex-wrap: wrap; justify-content: center; gap: calc(var(--u) * 1); width: calc(var(--u) * 20); }
+#pack .mini .pips i { width: calc(var(--u) * 2); height: calc(var(--u) * 2); background: var(--paper-ink); }
+#pack .mini .pips b { font-weight: normal; font-size: calc(var(--u) * 5); line-height: 1; }
+#pack .info { min-height: calc(var(--u) * 22); line-height: 1.35; }
+#pack .info b { color: var(--gold); font-weight: normal; }
+#pack .info small { color: var(--ink-dim); font-size: inherit; }
+#pack .hint { color: var(--ink-dim); text-align: center; }
+
+/* 盤の上に置く紙（確認・メニュー） */
+#dialog { position: absolute; inset: 0; display: none; z-index: 8; background: #0b112066; }
+#dialog.open { display: block; }
+#dialog .paper {
+  position: absolute; left: 50%; top: calc(var(--u) * 70); transform: translateX(-50%); width: calc(var(--u) * 176);
+  padding: calc(var(--u) * 3) calc(var(--u) * 5) calc(var(--u) * 4); font-size: calc(var(--u) * 5.6); line-height: 1.45;
+}
+#dlg-title { margin-bottom: calc(var(--u) * 3); }
+#dlg-body p { margin: 0 0 calc(var(--u) * 3); }
+#dlg-body .log { max-height: calc(var(--u) * 70); overflow: auto; }
+#dlg-actions { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 3); margin-top: calc(var(--u) * 4); }
+
+#banner { position: absolute; left: 0; top: 0; width: calc(var(--u) * 100); height: calc(var(--u) * 30); transform: translate(-50%, -50%); display: grid; place-items: center; color: var(--gold); pointer-events: none; opacity: 0; }
+
+/* タイトルと結果 */
+.cover { position: absolute; inset: 0; display: none; place-items: center; background: #0b1120cc; z-index: 10; }
+.cover.open { display: grid; }
+#title { cursor: pointer; text-align: center; }
+#title h1 { margin: 0; color: var(--gold); }
+#title .sub { color: var(--ink-dim); margin-top: calc(var(--u) * 6); }
+#title .copy { margin-top: calc(var(--u) * 12); }
+#title .start { margin-top: calc(var(--u) * 16); color: #fbf3e2; }
+#title .keys { margin-top: calc(var(--u) * 10); font-size: calc(var(--u) * 6); color: var(--ink-dim); line-height: 1.7; }
+#result .box { background: var(--paper); color: var(--paper-ink); border: calc(var(--u) * 1) solid var(--edge); padding: calc(var(--u) * 12) calc(var(--u) * 20); text-align: center; min-width: calc(var(--u) * 180); }
+#result .eyebrow { color: var(--paper-dim); letter-spacing: .2em; font-size: calc(var(--u) * 6); }
+#result h2 { font-weight: normal; font-size: calc(var(--u) * 12); margin: calc(var(--u) * 4) 0; }
+#result p { font-size: calc(var(--u) * 7); margin: calc(var(--u) * 3) 0; }
+#result .total { font-size: calc(var(--u) * 14); color: #8f2f2b; }
+#result button { margin-top: calc(var(--u) * 8); background: #5c7236; color: #fbf3e2; border: calc(var(--u) * 1) solid #34402a; padding: calc(var(--u) * 3) calc(var(--u) * 10); font-size: calc(var(--u) * 7); }
+/* ---- クリア演出（踏破・帰還の巻物。js/ending.js）。ドットは 960×540 のキャンバス、文字と窓は DOM */
+#ending { position: absolute; inset: 0; z-index: 40; display: none; background: #0b1120; cursor: pointer; }
+#ending.show { display: block; }
+#end-cv { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+#end-credits { position: absolute; left: 0; right: 0; top: 0; text-align: center; color: #fbf3e2; display: none; pointer-events: none; }
+#end-credits.show { display: block; }
+#end-credits .dim { color: var(--ink-dim); }
+#end-head { position: absolute; left: 0; right: 0; top: calc(var(--u) * 20); text-align: center; color: #5c422c; display: none; pointer-events: none; }
+#end-final { position: absolute; left: 0; right: 0; top: calc(var(--u) * 56); text-align: center; color: #8f2f2b; display: none; pointer-events: none; }
+#end-head.show, #end-final.show, #end-hint.show { display: block; }
+#end-msg { position: absolute; left: 50%; top: calc(var(--u) * 152); transform: translateX(-50%); display: none; color: var(--ink); padding: calc(var(--u) * 4) calc(var(--u) * 10); white-space: nowrap; }
+#end-msg.show { display: block; }
+#end-win { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; color: var(--ink); padding: calc(var(--u) * 5) calc(var(--u) * 8); cursor: default; }
+#end-win.show { display: block; }
+#end-win .t { color: var(--gold); margin-bottom: calc(var(--u) * 5); text-align: center; }
+#end-win input { display: block; width: calc(var(--u) * 100); margin: 0 auto calc(var(--u) * 6); padding: calc(var(--u) * 2) calc(var(--u) * 4); color: var(--ink);
+  background: #0b1120; border: calc(var(--u) * 1) solid var(--edge); outline: none; text-align: center; }
+#end-win .btns { text-align: center; }
+#end-win table { border-collapse: collapse; color: var(--ink); }
+#end-win th { color: var(--ink-dim); font-weight: normal; padding: 0 calc(var(--u) * 4) calc(var(--u) * 3); }
+#end-win td { padding: calc(var(--u) * 1) calc(var(--u) * 4); text-align: right; vertical-align: middle; }
+#end-win td:nth-child(2) { text-align: left; }
+#end-win td img { width: calc(var(--u) * 14); height: calc(var(--u) * 14); image-rendering: pixelated; display: block; }
+#end-win tr.me td { color: var(--gold); }
+#end-win .online { color: var(--ink-dim); text-align: center; margin: calc(var(--u) * 5) 0 0; }
+#end-hint { position: absolute; left: 0; right: 0; bottom: calc(var(--u) * 6); text-align: center; color: var(--ink-dim); display: none; pointer-events: none; }
+/* ---- OP（タイトル → 種族えらび → 説明 → キャラメイク。js/opening.js） */
+#op { position: absolute; inset: 0; z-index: 100; background: #0b1120; }
+#op.out { animation: op-out .6s steps(6) forwards; pointer-events: none; }
+@keyframes op-out { to { opacity: 0; } }
+#op-cv { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+#op-copy { position: absolute; right: calc(var(--u) * 8); bottom: calc(var(--u) * 5); color: var(--ink-dim); pointer-events: none;
+  font-size: calc(var(--fs-s) * 3); --o: calc(var(--o-s) * 3); }   /* 前の大きさ（mm s）の3倍。書体のドットの整数倍なので線はそろう */
+/* タイトルのメニュー（START を押すと、ロゴの上に重なる窓に縦に並ぶ） */
+#op-menu { position: absolute; left: 50%; top: calc(var(--u) * 92); translate: -50% 0; display: none; flex-direction: column; gap: calc(var(--u) * 6); padding: calc(var(--u) * 6) calc(var(--u) * 10); }
+#op-menu.show { display: flex; }
+#op-menu button { background: none; border: 0; padding: 0 0 0 calc(var(--u) * 14); color: var(--ink-dim); position: relative; cursor: pointer; text-align: left; white-space: nowrap; }
+#op-menu button.on { color: #fbf3e2; }
+#op-menu button.off { color: #506573; cursor: default; }   /* 選べない（つづきからの保存がない） */
+#op-menu button.on::before { content: ''; position: absolute; left: 0; top: 50%; translate: 0 -50%; border-style: solid; border-color: transparent transparent transparent var(--gold);
+  border-width: calc(var(--u) * 5) 0 calc(var(--u) * 5) calc(var(--u) * 7); }
+#op-toast { position: absolute; left: 0; right: 0; top: calc(var(--u) * 238); text-align: center; color: var(--ink-dim); pointer-events: none; }
+#op-hint { position: absolute; left: 0; right: 0; top: calc(var(--u) * 10); text-align: center; color: #fbf3e2; opacity: 0; transition: opacity .3s steps(3); pointer-events: none; }
+#op-hint.show { opacity: 1; }
+#op-hint small { display: block; margin-top: calc(var(--u) * 4); color: var(--ink-dim); }
+/* はじめからを選んだあと（種族えらび・キャラメイク）、左上に「タイトルへ」 */
+#op-back { position: absolute; left: calc(var(--u) * 8); top: calc(var(--u) * 8); display: none; cursor: pointer; color: var(--ink);
+  --fr: var(--fr-btn); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
+  border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
+  padding: 0 calc(var(--u) * 3); line-height: 1.2; }
+#op-back.show { display: block; }
+#op-back:hover { --fr: var(--fr-btn-h); }
+#op-back:active { translate: 0 calc(var(--u) * 1); }
+/* ハイスコア（OP のメニューから。js/ranking.js の記録の上位10件） */
+#op-rank { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: calc(var(--u) * 400); max-height: calc(var(--u) * 258);
+  display: none; flex-direction: column; color: var(--ink); padding: calc(var(--u) * 3) calc(var(--u) * 8) calc(var(--u) * 5); overflow: hidden; }
+#op-rank.show { display: flex; }
+#op-rank.pixwin { background: #0b1120f0 padding-box; box-shadow: 0 0 0 100vmax #0b112088; }   /* 後ろのロゴが透けないよう中は濃く、まわりも少し暗く */
+#op-rank .t { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 6); color: var(--gold);
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-plate-s));
+  border-image: var(--fr-plate) var(--fr-plate-s) fill / calc(var(--u) * var(--fr-plate-s)) stretch; image-rendering: pixelated;
+  margin: 0 0 calc(var(--u) * 4); padding: calc(var(--u) * 1) calc(var(--u) * 3) 0; }
+#op-rank .t small { color: var(--ink-dim); margin-left: auto; }
+#op-rank .t > *, #end-win th, #end-win td { white-space: nowrap; }   /* 見出し・表は折り返さない（窓が小さいときに「ハイスコ／ア」とならないように） */
+#op-rank .t .tabs { display: flex; gap: calc(var(--u) * 3); margin-left: calc(var(--u) * 6); }
+#op-rank .t .tab { padding: 0 calc(var(--u) * 3); color: var(--ink-dim); }
+#op-rank .t .tab.on { --fr: var(--fr-mv); color: #fbf3e2; }
+/* 1人1枚の横長の札（左に顔グラ 48u＝u が 2 のとき顔グラの1ドットが画面の1ピクセル）。10人分は窓の中でスクロール */
+#op-rank .list { overflow-y: auto; min-height: 0; flex: 1; display: flex; flex-direction: column; gap: calc(var(--u) * 3); padding-right: calc(var(--u) * 2);
+  scrollbar-width: thin; scrollbar-color: #506573 transparent; }
+#op-rank .row { display: grid; grid-template-columns: calc(var(--u) * 26) calc(var(--u) * 48) 1fr auto; align-items: center; gap: calc(var(--u) * 6);
+  min-height: calc(var(--u) * 56); padding: calc(var(--u) * 1) calc(var(--u) * 6) calc(var(--u) * 1) calc(var(--u) * 2); background: #18222d; box-shadow: inset 0 0 0 calc(var(--u) * 1) #2c3a48; }
+#op-rank .row .no { color: var(--ink-dim); font-weight: normal; text-align: center; }
+#op-rank .row .face { width: calc(var(--u) * 48); height: calc(var(--u) * 48); }   /* 枠なし、顔グラの透明はそのまま */
+#op-rank .row .face img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+#op-rank .row .who { display: flex; flex-direction: column; gap: calc(var(--u) * 4); min-width: 0; line-height: 1; }
+#op-rank .row .nm, #op-rank .row .sc { font-size: var(--fs-t); --o: var(--o-t); }   /* 名前とスコアは大きく（.t は見出しの板の名前なので使わない） */
+#op-rank .row .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#op-rank .row .sc { color: var(--ink); }
+#op-rank .row .sc small { color: var(--ink-dim); margin-left: calc(var(--u) * 2); }
+#op-rank .row .how { color: var(--ink); text-align: right; line-height: 1.15; white-space: nowrap; font-size: var(--fs-t); --o: var(--o-t); }   /* ターンと時間は名前と同じ大きさ */
+#op-rank .row .how .l, #op-rank .row .how small { color: var(--ink-dim); }
+#op-rank .row .how small { margin-left: calc(var(--u) * 1); }
+#op-rank .row.top { box-shadow: inset 0 0 0 calc(var(--u) * 1) var(--gold); }
+#op-rank .row.top .no, #op-rank .row.top .sc { color: var(--gold); }
+#op-rank .row.mine .nm { color: #4aa3e8; }
+/* おたから（同じ窓を使い回す）：アイコンは 18×18 を 54u（3倍）。まだのものは影と条件 */
+#op-rank .list.ota .row { grid-template-columns: calc(var(--u) * 54) 1fr; }
+#op-rank .list.ota .face { width: calc(var(--u) * 54); height: calc(var(--u) * 54); }   /* 18×18 をちょうど3倍 */
+#op-rank .list.ota .face canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+#op-rank .list.ota .tx { color: var(--ink-dim); white-space: normal; line-height: 1.3; }
+#op-rank .list.ota .row.none .nm { color: var(--ink-dim); }
+/* キャラメイクの「おたから」の欄：アイコンのボタン（付けているものは金の縁） */
+#op-win .ota { display: flex; gap: calc(var(--u) * 3); flex-wrap: wrap; }
+#op-win button.ob { width: calc(var(--u) * 22); height: calc(var(--u) * 22); padding: calc(var(--u) * 2); border: calc(var(--u) * 1) solid #506573; border-image: none; background: #18222d; }
+#op-win button.ob canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+#op-win button.ob.on { border-color: var(--gold); background: #2c3a48; }
+#op-rank .empty { text-align: center; margin: calc(var(--u) * 16) 0; line-height: 1.6; }
+#op-rank .empty small { color: var(--ink-dim); }
+#op-rank .acts { display: flex; align-items: center; justify-content: flex-end; gap: calc(var(--u) * 4); margin-top: calc(var(--u) * 6); }
+#op-rank .note { flex: 1; color: var(--ink-dim); }
+#op-rank button {
+  --fr: var(--fr-btn); color: var(--ink); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace; cursor: pointer;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
+  border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
+  padding: 0 calc(var(--u) * 2); line-height: 1.2; }
+#op-rank button:hover { --fr: var(--fr-btn-h); }
+#op-rank button.primary { --fr: var(--fr-pri); color: #fbf3e2; }
+#op-rank button.primary:hover { --fr: var(--fr-pri-h); }
+#op-rank button.warn { color: #e7a08a; }
+#op-rank button:active { translate: 0 calc(var(--u) * 1); }
+#op-win { position: absolute; left: calc(var(--u) * 272); top: calc(var(--u) * 34); width: calc(var(--u) * 200); display: none; color: var(--ink); padding: calc(var(--u) * 3) calc(var(--u) * 5) calc(var(--u) * 4); }
+#op-win.show { display: block; }
+#op-win.create { left: calc(var(--u) * 240); top: calc(var(--u) * 22); width: calc(var(--u) * 232); }
+#op-win .t { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 3); color: var(--ink);
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-plate-s));
+  border-image: var(--fr-plate) var(--fr-plate-s) fill / calc(var(--u) * var(--fr-plate-s)) stretch; image-rendering: pixelated;
+  margin: 0 0 calc(var(--u) * 4); padding: calc(var(--u) * 1) calc(var(--u) * 2) 0; min-height: calc(var(--u) * 8); }
+#op-win .t small { color: var(--ink-dim); }
+#op-win p { margin: 0 calc(var(--u) * 1) calc(var(--u) * 4); line-height: 1.5; min-height: 1em; }
+#op-win .q { color: var(--gold); }
+#op-win .nm { color: var(--gold); margin: 0 calc(var(--u) * 1) calc(var(--u) * 3); }
+#op-win .dim { color: var(--ink-dim); }
+#op-win .rows { display: grid; grid-template-columns: calc(var(--u) * 52) 1fr; align-items: center; row-gap: calc(var(--u) * 8); margin: calc(var(--u) * 2) calc(var(--u) * 1) calc(var(--u) * 6); }
+#op-win .lab { color: var(--ink-dim); }
+#op-win .sel { display: flex; align-items: center; gap: calc(var(--u) * 3); }
+#op-win .sel b { flex: 1; text-align: center; font-weight: normal; }
+#op-win .sws { display: flex; gap: calc(var(--u) * 3); }
+#op-win .acts { display: flex; flex-wrap: wrap; gap: calc(var(--u) * 3); }
+#op-win button {
+  --fr: var(--fr-btn); color: var(--ink); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
+  border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
+  padding: 0 calc(var(--u) * 2); font-size: var(--fs-w); --o: var(--o-w); line-height: 1.2;
+}
+#op-win button:hover, #op-win button.tg.on { --fr: var(--fr-btn-h); }
+#op-win button.primary { --fr: var(--fr-pri); color: #fbf3e2; }
+#op-win button.primary:hover { --fr: var(--fr-pri-h); }
+#op-win button:active { translate: 0 calc(var(--u) * 1); }
+/* 色のつまみ（左上が明るい色、右下が暗い色。選んでいるものは金の縁） */
+#op-win button.sw { width: calc(var(--u) * 18); height: calc(var(--u) * 18); padding: 0; border: calc(var(--u) * 1) solid #221b17; border-image: none;
+  background: linear-gradient(135deg, var(--b) 0 50%, var(--a) 50% 100%); box-shadow: inset calc(var(--u) * 1) calc(var(--u) * 1) 0 #fbf3e255; }
+#op-win button.sw:hover { outline: calc(var(--u) * 1) solid var(--slate-3); }
+#op-win button.sw.on { outline: calc(var(--u) * 1) solid var(--gold); outline-offset: calc(var(--u) * 1); }
+/* ゲームオーバーの演出（js/gameover.js）。ドットは 240×135 のキャンバスを整数倍で */
+#gameover { position: absolute; inset: 0; z-index: 95; display: none; }   /* 手札より上、OP（100）より下 */
+#gameover canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+#gameover .go-panel { position: absolute; left: 50%; top: calc(var(--u) * 150); translate: -50% 0; display: none; text-align: center; color: var(--ink); padding: calc(var(--u) * 4) calc(var(--u) * 10) calc(var(--u) * 6); }
+#gameover .go-panel.show { display: block; }
+#gameover .go-panel p { margin: 0 0 calc(var(--u) * 6); }
+#gameover .acts { display: flex; gap: calc(var(--u) * 6); justify-content: center; }
+#gameover button { --fr: var(--fr-btn); color: var(--ink); background: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
+  border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
+  padding: 0 calc(var(--u) * 3); line-height: 1.2; cursor: pointer; }
+#gameover button:hover { --fr: var(--fr-btn-h); }
+#gameover button.primary { --fr: var(--fr-pri); color: #fbf3e2; }
+#gameover button.primary:hover { --fr: var(--fr-pri-h); }
+/* チュートリアル（js/tutorial.js）：左下の顔がしゃべる吹き出し（窓としっぽは js が描く1枚のドット絵 --bubble。127×128＋しっぽ17＋影2 u）
+   字は1文字ずつ、下から跳ねて出る（書体のドットで 4→1→−2→−1→0、コマ送り）。行の終わりに ▼ が上下する。流れるできごとの文字とログのタブはそのあいだ隠す */
+#tut { position: absolute; left: calc(var(--u) * 3); top: calc(var(--u) * 33); width: calc(var(--u) * 127); height: calc(var(--u) * 147); box-sizing: border-box;
+  display: none; z-index: 7; color: var(--ink); cursor: pointer;
+  background: var(--bubble) 0 0 / 100% 100% no-repeat; image-rendering: pixelated;
+  padding: calc(var(--u) * 8) calc(var(--u) * 9) calc(var(--u) * 28); }
+#tut.show { display: flex; flex-direction: column; }
+#tut-veil { position: absolute; inset: 0; z-index: 7; display: none; cursor: pointer; }   /* 文字送り待ちのあいだ盤をおおう透明の幕（js/tutorial.js）。#tut より前に置くので吹き出しは上 */
+#tut-veil.on { display: block; }
+/* おまけ（チュートリアルを最後までやったとき）：暗い幕・回る金の光（64ドットを2倍）・落ちて弾むアイコン（18ドットを4倍）・名前と説明の窓 */
+#tut-gift { position: absolute; inset: 0; z-index: 9; background: #0b1120d9; opacity: 0; transition: opacity .25s; cursor: pointer; color: var(--ink); }
+#tut-gift.on { opacity: 1; }
+#tut-gift .hd { position: absolute; left: 0; right: 0; top: calc(var(--u) * 22); text-align: center; color: var(--gold); text-shadow: 0 calc(var(--u) * 1) 0 #000; }
+#tut-gift .rays { position: absolute; left: calc(50% - var(--u) * 64); top: calc(var(--u) * 40); width: calc(var(--u) * 128); height: calc(var(--u) * 128); background: 0 0 / 100% 100% no-repeat; image-rendering: pixelated; }
+#tut-gift .ico { position: absolute; left: calc(50% - var(--u) * 36); top: calc(var(--u) * 68); width: calc(var(--u) * 72); height: calc(var(--u) * 72); }
+#tut-gift.on .ico { animation: tut-gift-drop 420ms step-end both, tut-gift-bob 1200ms step-end 420ms infinite; }
+#tut-gift .ico canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+@keyframes tut-gift-drop { 0% { translate: 0 calc(var(--u) * -60); } 20% { translate: 0 calc(var(--u) * -32); } 40% { translate: 0 calc(var(--u) * -8); } 55% { translate: 0 calc(var(--u) * 4); } 70% { translate: 0 calc(var(--u) * -4); } 85% { translate: 0 calc(var(--u) * 1); } 100% { translate: 0 0; } }
+@keyframes tut-gift-bob { 0% { translate: 0 0; } 50% { translate: 0 calc(var(--u) * -2); } }
+#tut-gift .win { position: absolute; left: 50%; top: calc(var(--u) * 176); transform: translateX(-50%); padding: calc(var(--u) * 5) calc(var(--u) * 12); text-align: center; white-space: nowrap; }
+#tut-gift .win .tx { color: var(--ink-dim); margin-top: calc(var(--u) * 3); }
+#tut-gift .hint { position: absolute; left: 0; right: 0; top: calc(var(--u) * 240); text-align: center; color: var(--ink-dim); }
+#tut .t { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 3); color: var(--gold);
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-plate-s));
+  border-image: var(--fr-plate) var(--fr-plate-s) fill / calc(var(--u) * var(--fr-plate-s)) stretch; image-rendering: pixelated;
+  margin: 0 0 calc(var(--u) * 3); padding: 0 calc(var(--u) * 1) 0 calc(var(--u) * 2); }
+#tut .bd { flex: 1; min-height: 0; overflow: hidden; margin: 0 calc(var(--u) * 1); line-height: 1.35; }
+#tut .ln { margin-bottom: calc(var(--u) * 2); }
+#tut .ch { position: relative; visibility: hidden; }
+#tut .ch.on { visibility: visible; animation: tut-hop 170ms step-end both; }
+#tut .ch.now { animation: none; }
+@keyframes tut-hop {
+  0% { top: calc(var(--o-b) * 4); } 25% { top: calc(var(--o-b) * 1); } 45% { top: calc(var(--o-b) * -2); } 70% { top: calc(var(--o-b) * -1); } 100% { top: 0; }
+}
+#tut .more { display: inline-block; position: relative; width: calc(var(--u) * 9); height: calc(var(--u) * 6); margin-left: calc(var(--u) * 3);
+  background: var(--more) 0 0 / 100% 100%; image-rendering: pixelated; animation: tut-more 700ms step-end infinite; }
+@keyframes tut-more { 0% { top: 0; } 50% { top: calc(var(--u) * 2); } }
+#tut .acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(var(--u) * 3); }
+#tut button {
+  --fr: var(--fr-btn); color: var(--ink-dim); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
+  border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
+  padding: 0 calc(var(--u) * 2); font-size: var(--fs-m); line-height: 1.2; cursor: pointer;
+}
+#tut .t button { font-size: var(--fs-s); padding: 0 calc(var(--u) * 1); }
+#tut button:hover { --fr: var(--fr-btn-h); color: var(--ink); }
+#tut button.primary { --fr: var(--fr-pri); color: #fbf3e2; }
+#tut button.primary:hover { --fr: var(--fr-pri-h); }
+#tut button:active { translate: 0 calc(var(--u) * 1); }
+body.tut #log-tab { display: none; }
+body.tut #log { opacity: 0; }
+/* 案内している説明の窓のボタンを金の縁で示す（点滅はさせない） */
+body[data-tut="discard"] #cardtip button[data-act="捨てて引き直す"],
+body[data-tut="forced"] #cardtip button[data-act="1マス移動に使う"] { outline: calc(var(--u) * 1) solid var(--gold); outline-offset: calc(var(--u) * 1); color: var(--gold); }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; font-size: 16px; color: #b8c4cc; z-index: 20; background: #0b1120; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="view" width="480" height="270" aria-label="迷宮の盤面"></canvas>
+  <canvas id="over" width="480" height="270"></canvas>
+  <canvas id="blood" width="480" height="270"></canvas>
+  <canvas id="card-fx" width="480" height="270"></canvas>
+  <div id="banner" class="mm t"></div>
+  <div id="hud-shade"></div>
+  <div id="hud-top">
+    <div class="floor-row"><div class="floor-ic"><canvas class="px" data-icon="stairs"></canvas></div><span id="floor" class="mm xl">1</span></div>
+    <div class="stat-row" title="ターン"><span class="lab mm m">ターン</span><canvas class="px" data-icon="foot"></canvas><span id="turn" class="mm l">0</span></div>
+    <div class="stat-row" title="持ち帰れば得られる点"><span class="lab mm m">スコア</span><canvas class="px" data-icon="coin"></canvas><span id="score" class="mm l">0</span></div>
+  </div>
+  <div id="log"></div>
+  <div id="log-panel"></div>
+  <button id="log-tab" title="ログ（L）" aria-label="ログ"><i></i></button>
+  <button id="menu-btn" aria-label="メニュー"><i></i></button>
+  <button id="pack-btn" title="持ち物（所持カードの一覧）" aria-label="もちもの一覧"><span class="lab mm m">もちもの一覧</span><canvas class="px" data-icon="pack"></canvas></button>
+  <div id="hud-me"><div class="face"><img id="portrait" alt="盗賊"></div></div>
+  <div id="status">
+    <div class="st-row"><span class="hp-lab"><b class="mm m">HP</b><span id="hp-num" class="mm l">10/10</span></span><div class="blk" id="block-row" title="防御"><b class="mm m">防御</b><canvas class="px" data-icon="shield"></canvas><span id="block" class="mm l">0</span></div><span></span></div>
+    <div class="bar" title="体力"><span id="hp-bar"></span></div>
+    <div id="effects"></div>
+    <canvas id="hp-fx" width="232" height="64"></canvas>
+  </div>
+  <canvas id="say-shadow"></canvas>
+  <canvas id="say"></canvas>
+  <div id="fontcmp"></div>
+  <div id="piles">
+    <div class="pile" id="deck" title="山札"><div class="stack"><i></i><i></i><i></i></div><b id="deck-n" class="mm l">0</b><small class="mm s">山札</small></div>
+    <div class="pile" id="disc" title="捨て札"><div class="stack"><i></i><i></i><span id="disc-face"></span></div><b id="disc-n" class="mm l">0</b><small class="mm s">捨て札</small></div>
+    <div class="pile small" id="rem" title="除外（押すと一覧）"><div class="stack"><i></i><i></i></div><b id="rem-n" class="mm l">0</b><small class="mm s">除外</small></div>
+  </div>
+  <div id="hand"></div>
+  <div id="cardtip"></div>
+  <div id="tip" class="mm m"></div>
+  <div id="pack"><div class="shade"></div><div class="box"><div class="hd mm l"></div><div class="grid"></div><div class="info mm m"></div><div class="hint mm s">どこかを押すか Esc で閉じる</div></div></div>
+  <div id="dialog"><div class="paper"><div id="dlg-title" class="mm m"></div><div id="dlg-body"></div><div id="dlg-actions"></div></div></div>
+  <div id="title" class="cover">
+    <div>
+      <h1 class="mm h">ほねっこの迷宮</h1>
+      <div class="sub mm m">3D版　テスト用</div>
+      <div class="copy mm l">一歩も、一撃も、手札から。</div>
+      <div class="start mm m">クリックか、なにかキーを押してはじめる（音が鳴ります）</div>
+      <div class="keys">矢印キー：歩く　1〜5：カード　もう一度押す／Enter：使う　Esc：やめる　M：音　B：背景　L：ログ　T：書体くらべ　U：大アップの確認　E：クリア演出の確認　Shift＋1〜5：カードの行き先の演出の確認</div>
+    </div>
+  </div>
+  <div id="result" class="cover"></div>
+  <div id="op">
+    <canvas id="op-cv" width="960" height="540" aria-label="タイトルと市場"></canvas>
+    <div id="op-menu" class="pixwin"></div>
+    <div id="op-toast" class="mm w"></div>
+    <div id="op-copy" class="mm">©芝村裕吏</div>
+    <div id="op-hint" class="mm t">迷宮に挑むのは だれ？</div>
+    <div id="op-win" class="pixwin"></div>
+    <div id="op-rank" class="pixwin"></div>
+    <button id="op-back" class="mm w">◀ タイトルへ</button>
+  </div>
+</div>
+<div id="loading">読み込み中…（three.js をネットから読みます）</div>
+<script src="js/logic.js"></script>
+<script src="js/trace.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/cardback.js"></script>
+<script src="js/boardtiles.js"></script>
+<script src="js/sprites_diag.js"></script>
+<script src="js/enemies_hd.js"></script>
+<script src="js/palette.js"></script>
+<script src="js/bgzones.js"></script>
+<script src="js/ending_assets.js"></script>
+<script src="js/ending.js"></script>
+<script src="js/face.js"></script>
+<script src="js/face_anim.js"></script>
+<script src="js/music.js"></script>
+<script src="js/gameover_assets.js"></script>
+<script src="js/gameover.js"></script>
+<script src="js/op_data.js"></script>
+<script src="js/opening.js"></script>
+<script src="js/tutorial.js"></script>
+<script src="js/ranking_config.js"></script>
+<script src="js/ranking.js"></script>
+<script src="js/otakara_assets.js"></script>
+<script src="js/otakara.js"></script>
+<script src="js/game3d.js"></script>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+startGame3D(THREE);
+</script>
+</body>
+</html>
