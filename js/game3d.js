@@ -2266,7 +2266,7 @@ function showCardTip(id) {
     add(r, '捨てて引き直す', () => perform('discard', cobj.id), 'mv');
   }
   el.style.left = 'calc(var(--u) * 356)';                // 盤の右の余白の下に固定（手札の横。盤には被らない。山札などは上の「もちもの一覧」の下へ移した）
-  el.style.bottom = 'calc(var(--u) * 4)';
+  el.style.bottom = 'calc(var(--u) * 14)';                 // 少し上げた（2026-10-10）
   void pos;
   el.classList.add('show');
 }

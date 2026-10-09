@@ -297,6 +297,11 @@ body.log-open #log { opacity: 0; }
   padding: 0 calc(var(--u) * 1); font-size: var(--fs-m); line-height: 1.2;
 }
 #cardtip button:hover, #dlg-actions button:hover { --fr: var(--fr-btn-h); }
+/* スマホ（指で触る画面）だけ、カードの説明の窓のボタンを大きく（押しやすく。2026-10-10） */
+@media (pointer: coarse) {
+  #cardtip button { font-size: var(--fs-l); padding: calc(var(--u) * 2) calc(var(--u) * 4); min-height: calc(var(--u) * 18); }
+  #cardtip .acts { gap: calc(var(--u) * 4); }
+}
 #cardtip .primary, #dlg-actions .primary { --fr: var(--fr-pri); color: #fbf3e2; }
 #cardtip .primary:hover, #dlg-actions .primary:hover { --fr: var(--fr-pri-h); }
 /* 押したときは厚みのぶん沈む */
