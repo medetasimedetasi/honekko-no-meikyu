@@ -4,7 +4,7 @@
 // アイコンは js/otakara_assets.js（おたから_20261008/作業/アイコンを打つ.py が書き出す 18×18）。
 //   Otakara.list            おたからの一覧（id・名前・説明・手に入る点 need）
 //   Otakara.has(id) / add(id) / when(id)   持っているか・手に入れる・手に入れた日時
-//   Otakara.newFor(score, cleared)   その点（と踏破したか）で新しく手に入るもの（まだ持っていないもの）
+//   Otakara.newFor(score, cleared, run)   その点（と踏破したか・探索の結果）で新しく手に入るもの（まだ持っていないもの）
 //   Otakara.need(u)         手に入る条件の文
 //   Otakara.icon(id, shadow) アイコンのキャンバス（shadow＝まだのものの影）
 //   Otakara.faceLook(look)  キャラメイクの見た目（look.ota＝付けているおたからの id の配列）→ 顔グラ（FaceKit）と盤のキャラの髪に渡す見た目
@@ -14,6 +14,7 @@
 // kind：acc＝キャラメイクの「おたから」の欄で付ける部品（part＝顔グラの部品の名前、colors＝色の置き換え、group＝同時に1つだけ）
 //       style＝「髪型」の選択肢に増える、hair＝「髪の色」の色見本に増える
 //       outfit＝顔グラの衣装（FaceKit.outfits の名前。「おたから」の欄で着る／脱ぐ。group 服で1つだけ）
+// got：点ではなく、その探索の結果 r（エンディングのデータ：status・total・ms など）で決まる。secret：手に入れる前は条件を「？？？？」
 // clear：点ではなく、踏破したら手に入る。tutorial：チュートリアルを最後までやったら手に入る（js/tutorial.js）
 // （2026-10-09：メカクレは一式をやめて、髪型・髪の色・眼鏡・飾りを別々に）
 // text（説明）は漢字を使わない（2026-10-09 ユーザー指定）
@@ -25,12 +26,22 @@ const LIST = [
   { id: 'メカクレ', name: 'メカクレ', need: 3000, kind: 'style', text: 'かためがかくれるながいまえがみのかみがた。' },
   { id: '赤い眼鏡', name: 'おしゃれなめがね', need: 4000, kind: 'acc', part: '眼鏡', colors: { '#5c422c': '#d24a3c' }, group: '眼鏡', text: 'あかいフレームのおしゃれなめがね。' },
   { id: '赤い石の星かざり', name: '赤い石の星かざり', need: 5000, kind: 'acc', part: '星かざり（右）', text: 'まんなかにあかいいしのある、きんいろのほしのかみどめ。みぎにつける。' },
+  { id: '白い帽子', name: '白い帽子', need: 6000, kind: 'acc', part: '白い帽子', group: 'かぶりもの', text: 'しろいナイスなぼうし。' },   // 2026-10-10 キャラグラ作成①から。かぶりもの（バンダナと同時に1つ。フードのときは顔グラ側で外れる）
+  { id: 'しいたけベレー', name: 'しいたけベレー', need: 11400, secret: true, kind: 'acc', part: 'しいたけベレー', group: 'かぶりもの', text: 'きのこなかわいいベレーぼう。' },   // 2026-10-10 キャラグラ作成①から。条件は「？？？？」
   { id: 'イエロージャンパー', name: 'イエロージャンパー', clear: true, kind: 'outfit', part: 'イエロージャンパー', group: '服', text: 'きいろいジャンパー。' },   // 2026-10-09 キャラグラ作成①から
+  // 2026-10-10 キャラグラ作成①から（条件はユーザー指定）。手に入れる前は条件を「？？？？」（secret）
+  { id: '赤いスカーフ', name: '赤いスカーフ', kind: 'outfit', part: '赤いスカーフ', group: '服', secret: true,
+    got: r => r.status === 'RETURNED' && r.ms < 10 * 60 * 1000, text: 'じょうねつてきなあかいスカーフ。' },   // 迷宮の中の時間10分未満で、帰還の巻物で帰る
+  { id: 'バンダナ', name: 'バンダナ', kind: 'acc', part: 'バンダナ', group: 'かぶりもの', secret: true,
+    got: r => r.status === 'CLEARED' && r.total >= 12000, text: 'とってもクールなバンダナ。' },   // スコア12000以上で30階を踏破。かぶりもの（FaceKit.hats）は同時に1つ。フードのときは顔グラ側で外れる
 ];
 const KEY = 'honekko.otakara.v1';
 let owned = {};
 try { owned = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { owned = {}; }
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(owned)); } catch { /* 保存なし */ } };
+// 確かめ用：URL に ?ota=all を付けると、全部持っている扱い（このブラウザの記録には残さない。外せば元どおり。2026-10-10）
+const ALL = /[?&]ota=all\b/.test(location.search);
+if (ALL) owned = Object.fromEntries(LIST.map(u => [u.id, owned[u.id] || Date.now()]));
+const save = () => { if (ALL) return; try { localStorage.setItem(KEY, JSON.stringify(owned)); } catch { /* 保存なし */ } };
 
 const cache = new Map();
 function icon(id, shadow = false) {
@@ -68,8 +79,9 @@ globalThis.Otakara = {
   has: id => !!owned[id],
   when: id => owned[id] || null,
   add(id) { if (!owned[id]) { owned[id] = Date.now(); save(); } },
-  newFor: (score, cleared = false) => LIST.filter(u => !u.tutorial && (u.clear ? cleared : score >= u.need) && !owned[u.id]),   // cleared＝踏破した
-  need: u => (u.tutorial ? 'チュートリアルを最後までやる' : u.clear ? '地下迷宮を踏破する' : `1回の探索で ${u.need.toLocaleString()}点 以上`),   // 手に入る条件の文
+  newFor: (score, cleared = false, run = null) => LIST.filter(u => !u.tutorial && !owned[u.id]
+    && (u.got ? !!run && u.got(run) : u.clear ? cleared : score >= u.need)),   // cleared＝踏破した、run＝その探索の結果（got の条件）
+  need: u => (u.secret ? '？？？？' : u.tutorial ? 'チュートリアルを最後までやる' : u.clear ? '地下迷宮を踏破する' : `1回の探索で ${u.need.toLocaleString()}点 以上`),   // 手に入る条件の文
   forTutorial: () => LIST.filter(u => u.tutorial && !owned[u.id]),   // チュートリアルを終えたときに新しく手に入るもの
   count: () => LIST.filter(u => owned[u.id]).length,
   icon, faceLook,

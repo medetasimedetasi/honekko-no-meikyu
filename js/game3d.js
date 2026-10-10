@@ -159,6 +159,7 @@ const ENEMY_LOOK = {
   'depth-7': { kind: 'zombie', recolor: { '#7a8e9c': '#cca673', '#6e655a': '#897d69', '#506573': '#8a5a38', '#2c3a48': '#5c422c' } },   // グール（ゾンビの肌を黄ばんだ土気色に。色トレスの線も肌に合わせる）
   'depth-8': { kind: 'ogre' }, 'depth-9': { kind: 'troll' }, 'depth-10': { kind: 'gargoyle' },
   'depth-11': { kind: 'minotaur' }, 'depth-12': { kind: 'golem' },
+  'depth-13': { kind: 'wraith' },   // 本編（30階まで）には出ない敵。絵の試し（2026-10-10）
 };
 const DEEP_SKINS = ['#d9d1b8', '#93a68c', '#8c9478', '#c9a77a', '#8a9aa8', '#9a8bb0', '#b08a7a', '#7f9fb0'];
 function enemyLook(type) {
@@ -174,7 +175,7 @@ const KIND = {
   orc: { ground: 24, move: [['move_0', 120], ['move_1', 120]], moveMs: 240 },
 };
 for (const k of ['hobgoblin']) KIND[k] = KIND.goblin;
-for (const k of ['skeleton', 'zombie', 'ogre', 'troll', 'gargoyle', 'minotaur', 'golem']) KIND[k] = KIND.orc;
+for (const k of ['skeleton', 'zombie', 'ogre', 'troll', 'gargoyle', 'minotaur', 'golem', 'wraith']) KIND[k] = KIND.orc;
 // 待機（呼吸）：idle_0＝吐いた姿、idle_1＝吸って胸から上が1ドット上がった姿
 const HOP_PX = 2;   // 敵が歩くときの弾みの高さ（画面のドット）
 const EIDLE = () => newEntityAnim([['idle_0', 820], ['idle_1', 640]], true);

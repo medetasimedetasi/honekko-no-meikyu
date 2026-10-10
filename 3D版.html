@@ -469,7 +469,7 @@ body.log-open #log { opacity: 0; }
 #op-rank .list.ota .row.none .nm { color: var(--ink-dim); }
 /* キャラメイクの「おたから」の欄：アイコンのボタン（付けているものは金の縁） */
 #op-win .ota { display: flex; gap: calc(var(--u) * 3); flex-wrap: wrap; }
-#op-win button.ob { width: calc(var(--u) * 22); height: calc(var(--u) * 22); padding: calc(var(--u) * 2); border: calc(var(--u) * 1) solid #506573; border-image: none; background: #18222d; }
+#op-win button.ob { width: calc(var(--u) * 20); height: calc(var(--u) * 20); padding: calc(var(--u) * 0); border: calc(var(--u) * 1) solid #506573; border-image: none; background: #18222d; }
 #op-win button.ob canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
 #op-win button.ob.on { border-color: var(--gold); background: #2c3a48; }
 #op-rank .empty { text-align: center; margin: calc(var(--u) * 16) 0; line-height: 1.6; }
@@ -488,7 +488,7 @@ body.log-open #log { opacity: 0; }
 #op-rank button:active { translate: 0 calc(var(--u) * 1); }
 #op-win { position: absolute; left: calc(var(--u) * 272); top: calc(var(--u) * 34); width: calc(var(--u) * 200); display: none; color: var(--ink); padding: calc(var(--u) * 3) calc(var(--u) * 5) calc(var(--u) * 4); }
 #op-win.show { display: block; }
-#op-win.create { left: calc(var(--u) * 240); top: calc(var(--u) * 22); width: calc(var(--u) * 232); }
+#op-win.create { left: calc(var(--u) * 214); top: calc(var(--u) * 14); width: calc(var(--u) * 262); }   /* おたからが2段になっても下にはみ出さないよう、少し上へ・広く（下のボタン2つが横に並ぶ幅。2026-10-10） */
 #op-win .t { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u) * 3); color: var(--ink);
   border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-plate-s));
   border-image: var(--fr-plate) var(--fr-plate-s) fill / calc(var(--u) * var(--fr-plate-s)) stretch; image-rendering: pixelated;
@@ -498,8 +498,8 @@ body.log-open #log { opacity: 0; }
 #op-win .q { color: var(--gold); }
 #op-win .nm { color: var(--gold); margin: 0 calc(var(--u) * 1) calc(var(--u) * 3); }
 #op-win .dim { color: var(--ink-dim); }
-#op-win .rows { display: grid; grid-template-columns: calc(var(--u) * 52) 1fr; align-items: center; row-gap: calc(var(--u) * 8); margin: calc(var(--u) * 2) calc(var(--u) * 1) calc(var(--u) * 6); }
-#op-win .lab { color: var(--ink-dim); }
+#op-win .rows { display: grid; grid-template-columns: max-content 1fr; column-gap: calc(var(--u) * 6); align-items: center; row-gap: calc(var(--u) * 6); margin: calc(var(--u) * 2) calc(var(--u) * 1) calc(var(--u) * 4); }
+#op-win .lab { color: var(--ink-dim); white-space: nowrap; }   /* 「おたから」が折り返して行が高くならないように */
 #op-win .sel { display: flex; align-items: center; gap: calc(var(--u) * 3); }
 #op-win .sel b { flex: 1; text-align: center; font-weight: normal; }
 #op-win .sws { display: flex; gap: calc(var(--u) * 3); }

@@ -283,7 +283,7 @@ async function finale(data, record) {
 }
 async function unlocks(data) {
   const O = globalThis.Otakara;   // おたから（js/otakara.js）。なければ下の仮の表
-  const got = O ? O.newFor(data.total, data.status === 'CLEARED') : UNLOCKS.filter(u => data.total >= u.need && !store.owned.has(u.id));
+  const got = O ? O.newFor(data.total, data.status === 'CLEARED', data) : UNLOCKS.filter(u => data.total >= u.need && !store.owned.has(u.id));
   for (const u of got) {
     if (!data.preview) { if (O) O.add(u.id); else store.owned.add(u.id); }   // E キーの見本では手に入れない
     const a = globalThis.OTAKARA_ICONS?.[u.id] || A.treasures[u.id]; S.unlock = { img: sprite(a.rows, a.pal, a.inner ?? 1), at: frame };

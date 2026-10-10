@@ -15,7 +15,8 @@
 //   Ranking.online.flush()      まだ送れていない記録を送り直す
 (() => {
 'use strict';
-const KEY = 'honekko.ranking.v1', NAME_KEY = 'honekko.lastName', MAX = 50, VERSION = 'test-20261009';
+// 記録の置き場所と版の名前は js/ranking_config.js で替えられる（全体公開版は身内版と同じ github.io に置くので、置き場所を分けないと「このブラウザ」の記録がまざる）
+const KEY = globalThis.HK_RANKING_KEY || 'honekko.ranking.v1', NAME_KEY = 'honekko.lastName', MAX = 50, VERSION = globalThis.HK_RANKING_VERSION || 'test-20261009';
 const URL_ = String(globalThis.HK_RANKING_URL || '').trim();
 const read = () => { try { const a = JSON.parse(localStorage.getItem(KEY)); return Array.isArray(a) ? a : []; } catch { return []; } };
 let list = read();

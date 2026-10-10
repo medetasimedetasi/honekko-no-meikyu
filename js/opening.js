@@ -447,7 +447,9 @@ function onWinClick(ev) {
     const s = new Set(look.ota || []), O = globalThis.Otakara, u = O.list.find(x => x.id === d.ota);
     if (s.has(d.ota)) s.delete(d.ota);
     else { if (u?.group) for (const x of O.list) if (x.group === u.group) s.delete(x.id); s.add(d.ota); }
-    changeLook({ ota: [...s] });
+    const patch = { ota: [...s] };
+    if (u?.group === 'かぶりもの' && s.has(d.ota)) patch.hood = false;   // かぶりもの（帽子・バンダナ）を付けたら、フードを自動で外す（フードのままだと出ないため。2026-10-10 ユーザー指定）
+    changeLook(patch);
   }
 }
 function onKey(ev) {
