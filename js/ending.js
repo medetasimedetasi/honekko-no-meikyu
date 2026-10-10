@@ -13,6 +13,7 @@
 'use strict';
 const CW = 960, CH = 540, STEP = 1000 / 12;
 const A = globalThis.ENDING_ASSETS;
+const TREASURE_MAX = 14;                                       // 財宝のアイコンを並べる数（2026-10-10。15個からは「+点数」に重なるので、14個までにして個数を出す）
 const CHEST_AT = [300, 1000, 2000, 4000, 7000];                  // 宝箱のアイコンが増える点（仮）
 const UNLOCKS = [{ id: '白い花', name: '白い花', need: 300 }];   // おたから（キャラメイクの着せ替え）と、手に入る点（仮）
 const CREDITS = [                                                // クレジット（2026-10-10 ユーザーの文。t＝大きい字、s＝小さい見出し、''＝名前。上の「踏破した／帰還した」は credits() が足す）
@@ -155,6 +156,7 @@ function drawScroll() {
   // 財宝（2列）：アイコンが1つずつ並ぶ
   for (const t of S.treasure) {
     for (let i = 0; i < t.shown; i++) { const age = frame - t.at[i], dy = age < 1 ? -6 : 0; blit(t.icon, t.x + i * t.step, t.y + dy, 2); }
+    if (t.count > t.nIcons && t.shown >= t.nIcons) { const s = 'x' + t.count, ex = t.x + (t.nIcons - 1) * t.step + t.icon.width * 2; digits(s, ex - digitsW(s, 2) + 4, t.y + 22, 2); }   // 15個以上：最後のアイコンの右下に個数
     if (t.done) digits('+' + comma(t.count * t.value), t.x + 150, t.y + 10, 2);
   }
   // 吸い込まれていくお金
@@ -242,14 +244,15 @@ async function scoreSheet(data) {
   const ty0 = 132 + Math.ceil(kills.length / 2) * 36 + 18;
   const tre = data.treasure.filter(t => t.count > 0);
   for (const [i, t] of tre.entries()) {
-    const step = Math.max(8, Math.min(30, Math.floor(110 / Math.max(1, t.count - 1))));
-    const row = { ...t, x: i % 2 ? 498 : 236, y: ty0 + Math.floor(i / 2) * 42, shown: 0, at: [], step, done: false };
+    const nIcons = Math.min(t.count, TREASURE_MAX);   // 並べるのは14個まで。それより多いときは、最後のアイコンに「x個数」を重ねる
+    const step = Math.max(8, Math.min(30, Math.floor(110 / Math.max(1, nIcons - 1))));
+    const row = { ...t, x: i % 2 ? 498 : 236, y: ty0 + Math.floor(i / 2) * 42, shown: 0, at: [], step, nIcons, done: false };
     S.treasure.push(row);
-    for (let n = 0; n < t.count; n++) { row.shown = n + 1; row.at.push(frame); if (!skip) { se('tally_coin'); await waitFrames(1); } }   // チャリン
+    for (let n = 0; n < nIcons; n++) { row.shown = n + 1; row.at.push(frame); if (!skip) { se('tally_coin'); await waitFrames(1); } }   // チャリン
     row.done = true;
     // お金：アイコン1つにつき2枚、少しずつずらして飛ばす。着いた分だけ点を足す
     const coins = [];
-    for (let n = 0; n < t.count; n++) for (let m = 0; m < 2; m++) coins.push({ x0: row.x + n * row.step + 8, y0: row.y, x1: 480 - 60, y1: 64, at: frame + coins.length, dur: 6, v: 0 });
+    for (let n = 0; n < nIcons; n++) for (let m = 0; m < 2; m++) coins.push({ x0: row.x + n * row.step + 8, y0: row.y, x1: 480 - 60, y1: 64, at: frame + coins.length, dur: 6, v: 0 });
     const each = Math.floor(t.count * t.value / coins.length); coins.forEach((c, j) => { c.v = j === coins.length - 1 ? t.count * t.value - each * (coins.length - 1) : each; });
     S.coins.push(...coins);
     if (!skip) loopOn('pour', 'coins_pour');   // じゃらら（飛んでいるあいだ）

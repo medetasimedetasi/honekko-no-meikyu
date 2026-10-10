@@ -36,6 +36,7 @@ const LIST = [
   // 2026-10-10 キャラグラ作成①から。hidden＝シークレットおたから：手に入れるまで、おたからの窓に出さない（数にも入れない。ユーザー指定）
   { id: '赤いネクタイ', name: '赤いネクタイ', need: 12300, hidden: true, kind: 'outfit', part: '赤いネクタイ', group: '服', text: 'あざやかなネクタイ。' },
   { id: '赤いリボン', name: '赤いリボン', need: 12600, hidden: true, kind: 'outfit', part: '赤いリボン', group: '服', text: 'かれいなリボン。' },
+  { id: 'ホープな服', name: 'ホープな服', need: 12900, hidden: true, kind: 'outfit', part: 'ホープな服', group: '服', text: 'かっこういいせいふく。' },   // 2026-10-11 キャラグラ作成①から。シークレット
   { id: 'イエロージャンパー', name: 'イエロージャンパー', clear: true, kind: 'outfit', part: 'イエロージャンパー', group: '服', text: 'きいろいジャンパー。' },   // 2026-10-09 キャラグラ作成①から
   // 2026-10-10 キャラグラ作成①から（条件はユーザー指定）。手に入れる前は条件を「？？？？」（secret）
   { id: '赤いスカーフ', name: '赤いスカーフ', kind: 'outfit', part: '赤いスカーフ', group: '服', secret: true,
