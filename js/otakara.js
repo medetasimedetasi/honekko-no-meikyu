@@ -14,6 +14,7 @@
 // kind：acc＝キャラメイクの「おたから」の欄で付ける部品（part＝顔グラの部品の名前、colors＝色の置き換え、group＝同時に1つだけ）
 //       style＝「髪型」の選択肢に増える、hair＝「髪の色」の色見本に増える
 //       outfit＝顔グラの衣装（FaceKit.outfits の名前。「おたから」の欄で着る／脱ぐ。group 服で1つだけ）
+// hidden：シークレットおたから。手に入れるまで、おたからの窓に出さない（数にも入れない）
 // got：点ではなく、その探索の結果 r（エンディングのデータ：status・total・ms など）で決まる。secret：手に入れる前は条件を「？？？？」
 // clear：点ではなく、踏破したら手に入る。tutorial：チュートリアルを最後までやったら手に入る（js/tutorial.js）
 // （2026-10-09：メカクレは一式をやめて、髪型・髪の色・眼鏡・飾りを別々に）
@@ -32,6 +33,9 @@ const LIST = [
   { id: 'しいたけベレー', name: 'しいたけベレー', need: 11400, secret: true, kind: 'acc', part: 'しいたけベレー', group: 'かぶりもの', text: 'きのこなかわいいベレーぼう。' },   // 2026-10-10 キャラグラ作成①から。条件は「？？？？」
   { id: '韋駄天の証', name: '韋駄天の証', kind: 'acc', part: '白い羽', group: '左の耳の上', secret: true,
     got: r => r.status === 'CLEARED' && r.total === 0, text: 'マナーのいいかんこうきゃく。' },   // 2026-10-10 キャラグラ作成①から。スコア0点で踏破。顔グラの部品は「白い羽」（白い花と同じ場所なので、どちらか1つ）
+  // 2026-10-10 キャラグラ作成①から。hidden＝シークレットおたから：手に入れるまで、おたからの窓に出さない（数にも入れない。ユーザー指定）
+  { id: '赤いネクタイ', name: '赤いネクタイ', need: 12300, hidden: true, kind: 'outfit', part: '赤いネクタイ', group: '服', text: 'あざやかなネクタイ。' },
+  { id: '赤いリボン', name: '赤いリボン', need: 12600, hidden: true, kind: 'outfit', part: '赤いリボン', group: '服', text: 'かれいなリボン。' },
   { id: 'イエロージャンパー', name: 'イエロージャンパー', clear: true, kind: 'outfit', part: 'イエロージャンパー', group: '服', text: 'きいろいジャンパー。' },   // 2026-10-09 キャラグラ作成①から
   // 2026-10-10 キャラグラ作成①から（条件はユーザー指定）。手に入れる前は条件を「？？？？」（secret）
   { id: '赤いスカーフ', name: '赤いスカーフ', kind: 'outfit', part: '赤いスカーフ', group: '服', secret: true,
@@ -88,6 +92,7 @@ globalThis.Otakara = {
   need: u => (u.secret ? '？？？？' : u.tutorial ? 'チュートリアルを最後までやる' : u.clear ? '地下迷宮を踏破する' : `1回の探索で ${u.need.toLocaleString()}点 以上`),   // 手に入る条件の文
   forTutorial: () => LIST.filter(u => u.tutorial && !owned[u.id]),   // チュートリアルを終えたときに新しく手に入るもの
   count: () => LIST.filter(u => owned[u.id]).length,
+  shown: () => LIST.filter(u => !u.hidden || owned[u.id]),   // おたからの窓に出すもの（シークレットは手に入れてから）
   icon, faceLook,
 };
 })();
