@@ -2663,19 +2663,21 @@ document.addEventListener('click', ev => {
 }, true);
 
 // ---------------------------------------------------------------- キーボード
+const DEV = /[?&]dev\b/.test(location.search);   // 確認用のキーを使う（3D版.html?dev）
 document.addEventListener('keydown', ev => {
   if ($('#title').classList.contains('open')) { if (!ev.repeat) startGameFromTitle(); ev.preventDefault(); return; }
   startAudio();
   if (ev.key === 'm' || ev.key === 'M') { setMute(!audio.muted); return; }
-  if (ev.key === 'b' || ev.key === 'B') { setFlat(!flatMode); return; }
-  if (ev.key === 'g' || ev.key === 'G') {          // 確認用：背景のゾーンを順に見る（階は変わらない）
+  // 確認用のキー（B・G・T・U・E・Shift＋1〜5）は、URL に ?dev を付けたときだけ（2026-10-10 リリース用に外した）
+  if (DEV && (ev.key === 'b' || ev.key === 'B')) { setFlat(!flatMode); return; }
+  if (DEV && (ev.key === 'g' || ev.key === 'G')) {          // 確認用：背景のゾーンを順に見る（階は変わらない）
     const Z = globalThis.BG_ZONES || []; bgPreview = Z[(Z.indexOf(bgZone.z) + 1) % Z.length]; buildBackground(); say(`背景：${bgPreview.name}`); return;
   }
   if (ev.key === 'l' || ev.key === 'L') { toggleLog(); return; }
-  if (ev.key === 't' || ev.key === 'T') { toggleFontCmp(); return; }
-  if (ev.key === 'u' || ev.key === 'U') { previewBigCloseup(); return; }
-  if ((ev.key === 'e' || ev.key === 'E') && !busy && !globalThis.Ending?.active) { previewEnding(); return; }   // クリア演出の確かめ（見本の撃破と財宝で）
-  if (ev.shiftKey && /^Digit[1-5]$/.test(ev.code)) {        // 確認用：Shift＋1〜5 … そのカードを使ったときの行き先の演出だけ見る（ルールは動かない）
+  if (DEV && (ev.key === 't' || ev.key === 'T')) { toggleFontCmp(); return; }
+  if (DEV && (ev.key === 'u' || ev.key === 'U')) { previewBigCloseup(); return; }
+  if (DEV && (ev.key === 'e' || ev.key === 'E') && !busy && !globalThis.Ending?.active) { previewEnding(); return; }   // クリア演出の確かめ（見本の撃破と財宝で）
+  if (DEV && ev.shiftKey && /^Digit[1-5]$/.test(ev.code)) {        // 確認用：Shift＋1〜5 … そのカードを使ったときの行き先の演出だけ見る（ルールは動かない）
     const b = document.querySelectorAll('#hand .card')[Number(ev.code.slice(5)) - 1], c = b && st.hand.find(h => h.id === Number(b.dataset.id));
     if (c) {
       const how = cardFate(c, 'effect', false) || 'burn', k = HK.cardOf(c);

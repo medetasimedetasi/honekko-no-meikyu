@@ -52,12 +52,13 @@ const save = l => { try { localStorage.setItem('honekko.look', JSON.stringify(l)
 const load = () => { try { return JSON.parse(localStorage.getItem('honekko.look')); } catch { return null; } };
 
 // ---------------------------------------------------------------- 描く
-function sheet(im, meta, k, scale, clearBox) {      // 縦に並んだコマの k 枚目を、粒のまま scale 倍で
+function sheet(im, meta, k, scale, clearBox) {      // 縦に並んだコマの k 枚目を、粒のまま scale 倍で。clearBox は消す枠（1つか、枠の配列）
   if (!im) return;
-  if (!clearBox) { g.drawImage(im, 0, k * meta.height, meta.width, meta.height, 0, 0, meta.width * scale, meta.height * scale); return; }
+  if (clearBox && !Array.isArray(clearBox[0])) clearBox = [clearBox];
+  if (!clearBox || !clearBox.length) { g.drawImage(im, 0, k * meta.height, meta.width, meta.height, 0, 0, meta.width * scale, meta.height * scale); return; }
   const c = sheet.tmp || (sheet.tmp = document.createElement('canvas')); c.width = meta.width; c.height = meta.height;
   const x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height); x.drawImage(im, 0, k * meta.height, meta.width, meta.height, 0, 0, meta.width, meta.height);
-  const [x0, y0, x1, y1] = clearBox; x.clearRect(x0, y0, x1 - x0, y1 - y0);    // START を消す（ほかの絵はこの枠にない）
+  for (const [x0, y0, x1, y1] of clearBox) x.clearRect(x0, y0, x1 - x0, y1 - y0);    // START・いつもの犬を消す（ほかの絵はこの枠にない）
   g.drawImage(c, 0, 0, meta.width * scale, meta.height * scale);
 }
 const TEXT = [...'電網適応アイドレス'];
@@ -84,15 +85,24 @@ function draw(now) {
   const k = frameNo(now), I = T.intro, D = T.idle, P = T.press;
   g.imageSmoothingEnabled = false;
   if (mode === 'intro') {
+    if (k >= 7 && landed < 1) { landed = 1; se('logo_land1'); }    // ロゴの着地音（音楽ジャンルセッションの案A。2026-10-10）：「ほねっこの」は7コマ目に着地（軽め）
+    if (k >= 19 && landed < 2) { landed = 2; se('logo_land2'); }   // 「迷宮」は19コマ目に着地（重め）。クリックで登場を飛ばしたときは鳴らさない
     market(ease((k - T.dogIn) / 25), 1);                      // 犬が出てくると同時に、2秒ほどかけて出る
-    thinText(); sheet(img.introL, I.letters, Math.min(k, I.frames - 1), 6); sheet(img.introD, I.deco, Math.min(k, I.frames - 1), 4);
+    thinText(); sheet(img.introL, I.letters, Math.min(k, I.frames - 1), 6); sheet(img.introD, I.deco, Math.min(k, I.frames - 1), 4, dog ? [DOG_BOX] : null);
+    if (dog && k >= T.dogIn) drawDog(now);
   } else if (mode === 'idle' || mode === 'menu') {
     market(1, 1);
-    thinText(); sheet(img.introL, I.letters, I.frames - 1, 6); sheet(img.idleD, D.deco, k % D.frames, 4, mode === 'menu' ? T.startBox : null);
+    thinText(); sheet(img.introL, I.letters, I.frames - 1, 6); sheet(img.idleD, D.deco, k % D.frames, 4, [mode === 'menu' && T.startBox, dog && DOG_BOX].filter(Boolean));
+    if (dog) drawDog(now);
   } else if (mode === 'press') {
     const p = Math.min(k + 1, P.frames - 1);                   // 1コマ目から（START はメニューを出したときに消えている）
     market(1, 1 - ease(k / 40));                              // 乗算がゆっくり抜けて明るくなる
-    thinText(P.thin_dx[p]); sheet(img.pressL, P.letters, p, 6); sheet(img.pressD, P.deco, p, 4);
+    thinText(P.thin_dx[p]); sheet(img.pressL, P.letters, p, 6);
+    if (!dog) sheet(img.pressD, P.deco, p, 4);
+    else {   // 着せ替えの犬：フリスビーは飛んでこない（いつもの犬がくわえる場面を飛ばす）。犬は字といっしょに右へ抜ける
+      if (p < P.dog_gone) sheet(img.idleD, D.deco, 0, 4, [T.startBox, DOG_BOX]); else sheet(img.pressD, P.deco, p, 4);
+      if (P.thin_dx[p] !== null) drawDog(now, P.thin_dx[p] / 2);
+    }
   } else if (mode === 'select') {
     const who = locked || hover;
     market(1, who && img['cut' + who] ? 1 : 0);                // 選んだ人のほかは乗算で暗く（2026-10-09）
@@ -170,7 +180,7 @@ function contInfo() {                                         // 「つづきか
 }
 function runMenu(i) {
   const id = MENU[i][0];
-  if (id === 'new') { se('ui_decide'); el.menu.classList.remove('show'); el.toast.textContent = ''; setMode('press'); return; }
+  if (id === 'new') { se('ui_decide'); setTimeout(() => se('dog_bark'), 150); el.menu.classList.remove('show'); el.toast.textContent = ''; setMode('press'); return; }   // 犬の「わんわん」（決定の音のすぐあと。2026-10-10）
   if (id === 'score' && globalThis.Ranking) { se('ui_decide'); openRank(); return; }
   if (id === 'treasure' && globalThis.Otakara) { se('ui_decide'); openOta(); return; }
   if (id === 'cont') {                                         // つづきから：保存した探索があれば、そこから
@@ -513,8 +523,24 @@ function personCut(n, ol) {
   x.putImageData(d, 0, 0);
   return c;
 }
+// タイトルの犬の着せ替え（2026-10-10）：ページを開いて最初のタイトルはいつもの犬。2回目から（帰還・中断・ゲームオーバーなどでもどったとき）は、
+// ドット犬アニメ（js/op_dogs.js）からランダムに1匹。いつもの犬のいる所（DOG_BOX、飾りのキャンバス 240×135 の座標）を消して、そこへ左向きに置く
+const DOG_BOX = [186, 58, 240, 90];
+const DOG_FOOT = { right: 219, bottom: 85 };   // いつもの犬の右端と足もと
+let shownOnce = false, dog = null, landed = 0;   // landed：登場でロゴの着地音を鳴らした数
+const dogImgs = (globalThis.OP_DOGS || []).map(d => { const im = new Image(); im.src = d.src; return { ...d, im, total: d.ms.reduce((a, b) => a + b, 0) }; });
+function drawDog(now, dx = 0) {   // dx：右へのずれ（飾りのキャンバスのドット）
+  const d = dog; if (!d.im.complete) return;
+  let t = now % d.total, f = 0; while (t >= d.ms[f]) t -= d.ms[f++];
+  const x = DOG_FOOT.right - d.w + Math.round(dx), y = DOG_FOOT.bottom - d.h;
+  g.save(); g.translate((x + d.w) * 4, y * 4); g.scale(-1, 1);   // 犬の絵は右向きなので反転して左向きに
+  g.drawImage(d.im, f * d.w, 0, d.w, d.h, 0, 0, d.w * 4, d.h * 4); g.restore();
+}
 async function show() {     // タイトルから（メニューの「タイトルへ」、エンディングのあと、ゲームオーバーの「タイトルへ」からも）
   if (!T) await ready;
+  dog = shownOnce && dogImgs.length ? dogImgs[Math.floor(Math.random() * dogImgs.length)] : null;
+  landed = 0;
+  shownOnce = true;
   globalThis.Tutorial?.stop();
   globalThis.Music?.title();     // タイトルの曲（バグパイプの曲ができるまでは無音）
   root.style.display = ''; active = true; look = null; faceFrames = null; locked = 0; hover = 0; menuSel = 0;

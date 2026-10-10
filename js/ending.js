@@ -7,7 +7,7 @@
 // 音（js/music.js、2026-10-08 OP作成セッションが追加）：曲は game3d.js の showResult が Music.jingle('ending') で流す。集計の効果音は下の se()／roll。
 //   宝箱が増える「ディロン」＝chest、おたからの「シュッ」＝unlock
 // ランキングは js/ranking.js（ブラウザに残す。2026-10-09 OP作成セッション）。なければ下の store に、閉じるまでだけ残す
-// 仮のもの：背景の1枚絵（いまは主人公の後ろ姿と宝の光）、クレジットの文、
+// 仮のもの：（背景の1枚絵は 2026-10-10 に本番の絵へ。js/ending_bg.js）
 //           宝箱のしきい値とおたからの条件。決まったら下の表を直す。
 (() => {
 'use strict';
@@ -15,10 +15,17 @@ const CW = 960, CH = 540, STEP = 1000 / 12;
 const A = globalThis.ENDING_ASSETS;
 const CHEST_AT = [300, 1000, 2000, 4000, 7000];                  // 宝箱のアイコンが増える点（仮）
 const UNLOCKS = [{ id: '白い花', name: '白い花', need: 300 }];   // おたから（キャラメイクの着せ替え）と、手に入る点（仮）
-const CREDITS = [                                                // クレジット（仮の文）
-  ['t', 'ほねっこの迷宮'], ['', ''], ['s', '原作'], ['', '電網適応アイドレス'], ['', ''],
-  ['s', 'ゲームデザイン'], ['', '（仮）'], ['', ''], ['s', 'グラフィック'], ['', '（仮）'], ['', ''],
-  ['s', '音楽'], ['', '（仮）'], ['', ''], ['', ''], ['t', 'Thank you for playing!'],
+const CREDITS = [                                                // クレジット（2026-10-10 ユーザーの文。t＝大きい字、s＝小さい見出し、''＝名前。上の「踏破した／帰還した」は credits() が足す）
+  ['t', 'ほねっこの迷宮'], ['', ''],
+  ['s', '原作'], ['', '電網適応アイドレス'], ['', '『ほねっこの迷宮』'], ['', '芝村裕吏'], ['', ''],
+  ['s', '原作ゲームデザイン'], ['', '芝村裕吏'], ['', ''],
+  ['s', 'グラフィック二次創作版デザイン'], ['', '谷坂少年'], ['', ''],
+  ['s', 'グラフィック'], ['', '谷坂少年'], ['', 'Claude Code Opus5.5（Anthropic）'], ['', 'Codex　GPT-6.1sol（OpenAI）'], ['', ''],
+  ['s', 'コーディング'], ['', 'Claude Code Opus5.5（Anthropic）'], ['', ''],
+  ['s', '音楽・効果音'], ['', '谷坂少年'], ['', 'Claude Code Opus5.5（Anthropic）'], ['', 'ElevenLabs'], ['', ''], ['', ''],
+  ['s', 'テストプレイヤー'], ['', 'テストプレイヤーのみなさん'], ['', '玄霧さん'], ['', '鷹臣さん'], ['', '一法師リツさん'], ['', 'ダムレイさん'], ['', '七飾蛍さん'], ['', 'ばろーるさん'], ['', ''], ['', ''],
+  ['', '©芝村裕吏'], ['', ''],
+  ['t', 'Thank you for playing!'], ['', '&芝村さん、後ほねっこのみなさん'],
 ];
 const C = { ink: '#221b17', paper: '#f2dcb4', paper2: '#e1bc88', paperEdge: '#cca673', rod: '#8a5a38', rod2: '#5c422c',
   gold: '#f0b84a', gold2: '#ae6f47', night: '#0b1120', night2: '#18222d', night3: '#2c3a48', white: '#fbf3e2' };
@@ -97,7 +104,13 @@ function draw() {
   if (S.fade) rect(0, 0, CW, CH, `rgba(11,17,32,${S.fade})`);
 }
 // 背景（仮）：夜の洞窟、奥の宝の光、宝を見つけたフードの後ろ姿（主人公の斜め後ろ×3）
+// 1枚絵（2026-10-10）：踏破＝お宝の光、帰還＝階段を上って地上へ（js/ending_bg.js、480×270 を2倍）。字が読めるよう少し沈める。絵がなければ下の仮の絵
+const BG_DIM = 0.3;
+const BG = {};
+for (const [k, src] of Object.entries(globalThis.ENDING_BG || {})) { const im = new Image(); im.src = src; BG[k] = im; }
 function drawBackground() {
+  const im = BG[S.status === 'RETURNED' ? 'returned' : 'cleared'];
+  if (im && im.complete && im.naturalWidth) { g.drawImage(im, 0, 0, CW, CH); rect(0, 0, CW, CH, `rgba(11,17,32,${BG_DIM})`); return; }
   rect(0, 0, CW, CH, C.night);
   for (let i = 0; i < 6; i++) rect(0, 300 + i * 40, CW, 40, i % 2 ? C.night2 : C.night);
   const cx = 600, cy = 330;
@@ -324,7 +337,7 @@ async function play(data, api = {}) {
   if (!root) buildDom();
   active = true; frame = 0; skip = false; advance = null; clickWaiters = [];
   for (const k of Object.keys(S)) delete S[k];
-  S.hero = data.hero || null; S.fade = 1;
+  S.hero = data.hero || null; S.fade = 1; S.status = data.status;
   show(root); timer = setInterval(onTick, STEP);
   const best = globalThis.Ranking ? Ranking.best() : store.ranking.length ? store.ranking[0].score : -1, record = data.total > best;
   S.bg = true; await fade(0, 6);
