@@ -1,7 +1,7 @@
 # 全体公開版（2026-10-10〜）：身内版（この 3D版_20261007、リポジトリ honekko-no-meikyu）の中身を、全体公開版のフォルダ（別のリポジトリ）へ写す。
 # 中身は同じで、ちがうのはランキングだけ（js/ranking_config.js：送り先＝別のスプレッドシート、ブラウザの中の記録の置き場所、版の名前）。
 # 全体公開版の js/ranking_config.js は全体公開版のフォルダの中で持ち、ここからは上書きしない。
-# 制作用のもの（オンラインランキング/・制作/・はじめに読む.md）は写さない。
+# 制作用のもの（オンラインランキング/・制作/・はじめに読む.md）は写さない。身内版の検索よけ（meta robots）は外して写す。
 # 使い方：python 制作/全体公開へ.py → 全体公開版のフォルダで git add -A・commit・push
 import os, shutil, subprocess
 SRC = 'D:/ほねっこの迷宮/3D版_20261007'
@@ -31,6 +31,12 @@ for f in files:
     os.makedirs(os.path.dirname(d), exist_ok=True)
     if not os.path.exists(d) or open(s, 'rb').read() != open(d, 'rb').read():
         shutil.copy2(s, d); changed += 1
+# 身内版の「検索に載せない」印（meta robots noindex）は、全体公開版では外す（全体公開版は検索に載ってよい）
+for f in files:
+    if f.endswith('.html'):
+        d = os.path.join(DST, f); t = open(d, encoding='utf8').read()
+        u = ''.join(l for l in t.splitlines(True) if 'name="robots"' not in l)
+        if u != t: open(d, 'w', encoding='utf8').write(u)
 cfg = os.path.join(DST, 'js/ranking_config.js')
 if not os.path.exists(cfg): open(cfg, 'w', encoding='utf8').write(CONFIG); print('全体公開版の ranking_config.js を作った')
 print('写した', changed, '/', len(files), '件 →', DST)
