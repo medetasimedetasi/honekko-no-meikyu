@@ -1625,7 +1625,7 @@ function drawFloorOver() {
 }
 function drawTargeting(g) {
   const tg = targeting, p = st.player;
-  if (CR.drawTargeting(g, tg)) return;                      // 2：飛行の道
+  if (CR.drawTargeting(g, tg, hoverTile)) return;           // 2：飛行の道（爆炎はマウスを乗せた着弾のマスでも範囲を出す）
   const opts = targetOptions(tg), tx = x => (x - 1) * T, ty = y => (y - 1) * T;
   for (const d of Object.keys(opts)) {
     const o = opts[d];

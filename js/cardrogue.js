@@ -142,8 +142,8 @@ globalThis.CardRogueKit = function (G) {
     if (!tg.path.length) return;
     G.perform('play', { ...(tg.extra || {}), cardId: tg.cardId, mode: tg.mode, path: tg.path.slice() });
   }
-  function drawTargeting(g, tg) {                        // 飛行の道：通るマスを青、次に行けるマスを薄く（爆炎は着弾の範囲を足して、ふつうの描き方へ）
-    if (tg.kind === 'blast') { drawBlastArea(g, tg); return false; }
+  function drawTargeting(g, tg, hover) {                 // 飛行の道：通るマスを青、次に行けるマスを薄く（爆炎は着弾の範囲を足して、ふつうの描き方へ）
+    if (tg.kind === 'blast') { drawBlastArea(g, tg, hover); return false; }
     if (tg.kind === 'area') {                              // 向きのない範囲：範囲を光らせ、当たる相手（敵・品）に枠
       const { tiles, marks } = areaTiles(tg), col = AREA_COL[tg.tint || tg.area] || AREA_COL.attack, tx = x => (x - 1) * T, ty = y => (y - 1) * T;
       for (const c of tiles) {
@@ -575,9 +575,14 @@ globalThis.CardRogueKit = function (G) {
   function blockKept(v) { return barrier(v, '#b8c4cc', '#7a8e9c'); }   // 敵の攻撃を受けても防御が残った（鉄骨防御・城塞の鎧・魔法の盾）
 
   // ---- 爆炎の着弾の範囲（向きを選んでいるあいだ、着弾のマスとまわりを橙の枠で）
-  function drawBlastArea(g, tg) {
-    if (tg.kind !== 'blast' || !tg.dir || !tg.dist) return;
-    const st = G.st, land = { x: st.player.x + DIRV[tg.dir][0] * tg.dist, y: st.player.y + DIRV[tg.dir][1] * tg.dist }, tx = x => (x - 1) * T, ty = y => (y - 1) * T;
+  // キーで選んだ着弾（tg.dir・tg.dist）がなければ、マウスを乗せている着弾できるマス（hover）で出す（2026-10-20 テストプレイ：マウスだと爆発の範囲が出なかった）
+  function drawBlastArea(g, tg, hover) {
+    if (tg.kind !== 'blast') return;
+    const st = G.st; let land = null;
+    if (tg.dir && tg.dist) land = { x: st.player.x + DIRV[tg.dir][0] * tg.dist, y: st.player.y + DIRV[tg.dir][1] * tg.dist };
+    else if (hover && Object.values(targetOptions(tg)).some(o => o.tiles.some(c => c.x === hover.x && c.y === hover.y))) land = { x: hover.x, y: hover.y };
+    if (!land) return;
+    const tx = x => (x - 1) * T, ty = y => (y - 1) * T;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       if (!tg.square && dx && dy) continue;
       const x = land.x + dx, y = land.y + dy; if (st.map[y]?.[x] !== '.') continue;

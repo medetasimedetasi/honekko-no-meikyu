@@ -200,8 +200,8 @@ body.log-open #log { opacity: 0; }
 .card .key { position: absolute; right: calc(var(--u) * 3); bottom: calc(var(--u) * 3); font-size: calc(var(--u) * 5); color: #3f2d2155; }
 /* 扇形に持つ：カードごとの傾き（--rot）。手をかざすと、その傾きの向きのまま持ち上がる */
 .card { transform: rotate(var(--rot, 0deg)); transform-origin: 50% 85%; }
-.card:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); z-index: 2; }   /* 持ち上がりを低く（2026-10-18 ユーザー指定。前は -20／-12） */
-.card.sel { outline: calc(var(--u) * 1) solid var(--gold); z-index: 1; }   /* 選んだカードは光るだけ（持ち上げない。2026-10-20 ユーザー指定）。手をかざしたときの持ち上がりは、ほかのカードと同じ */
+.card:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -1)); z-index: 2; }   /* 手をかざすと1ドットだけ上がる（2026-10-21 ユーザー指定：大きく動くとカードの角のロックを押しにくい。押す場所が外れない程度に） */
+.card.sel, .card.sel:hover { transform: rotate(var(--rot, 0deg)); outline: calc(var(--u) * 1) solid var(--gold); z-index: 1; }   /* 選んだカードは光るだけ（持ち上げない。手をかざしていても上げない。2026-10-20 ユーザー指定） */
 .card.leaving { opacity: 0; transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -30)); }
 .k-move { --kc: #5c7236; } .k-atk { --kc: #8f2f2b; } .k-def { --kc: #425c8d; }
 .k-food { --kc: #cca673; } .k-potion { --kc: #d24a3c; } .k-treasure { --kc: #f0b84a; }
@@ -222,8 +222,8 @@ body.log-open #log { opacity: 0; }
    沈んだ帯に手をかざすと、そのカードだけ浮いて選び直せる */
 #hand.aiming .card:not(.sel) { translate: 0 calc(var(--u) * 30); }
 #hand.aiming .card:not(.sel):hover { translate: 0 0; }
-#hand.aiming .card.sel { translate: 0 calc(var(--u) * 10); transform: rotate(var(--rot, 0deg)); }
-#hand.aiming .card.sel:hover { translate: 0 0; transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); }
+#hand.aiming .card.sel { translate: 0 0; transform: rotate(var(--rot, 0deg)); }   /* 選んだカードは下げない（ほかのカードだけ沈む。2026-10-21 ユーザー指定） */
+#hand.aiming .card.sel:hover { transform: rotate(var(--rot, 0deg)); }   /* 選んだカードは、手をかざしても上げない（2026-10-20） */
 
 /* カードの説明（手をかざしたときだけ。盤の外の余白に、文字は小さめ） */
 /* 角の丸いドット絵の縁（js の pixFrame が描く絵を9分割で伸ばす。--fr-*-s は辺の太さ、--fr-*-b は下の辺＋影の太さ。単位はドット＝u） */
@@ -320,6 +320,7 @@ body.log-open #log { opacity: 0; }
 #cr-dev .list button canvas { width: calc(var(--u) * 18); height: calc(var(--u) * 18); image-rendering: pixelated; flex: none; }
 #cr-dev h4 { margin: calc(var(--u) * 2) 0 0; grid-column: 1 / -1; color: #cca673; font-weight: normal; }
 .cr-fly { position: absolute; z-index: 6; pointer-events: none; background: #4a4640; border: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 0 0 calc(var(--u) * 1) #6e655a; }   /* 一時待機から捨て札へ飛ぶカード（2の盗賊） */
+#cardtip .acts button { padding: calc(var(--u) * 1) calc(var(--u) * 3); }   /* 使う・1マス移動に使う・捨てて引き直すを少しだけ大きく（2026-10-20 テストプレイ） */
 /* スマホ（指で触る画面）だけ、カードの説明の窓のボタンを大きく（押しやすく。2026-10-10） */
 @media (pointer: coarse) {
   #cardtip button { font-size: var(--fs-l); padding: calc(var(--u) * 2) calc(var(--u) * 4); min-height: calc(var(--u) * 18); }
