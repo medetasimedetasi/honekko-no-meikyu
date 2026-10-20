@@ -22,7 +22,8 @@ html, body { margin: 0; height: 100%; background: #0b1120; color: var(--ink); ov
 body { display: grid; place-items: center; font-family: 'DotGothic16', 'MS Gothic', 'Osaka-Mono', monospace; }
 button { font: inherit; color: inherit; cursor: pointer; }
 #stage { position: relative; width: 960px; height: 540px; overflow: hidden; }
-#view, #over { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+#view, #over, #over-top { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+#over-top { pointer-events: none; }
 /* 瀕死のとき、画面の四隅に血のあと（不透明度30％。点滅させず、ゆっくり出てゆっくり消える） */
 #blood { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; pointer-events: none; opacity: 0; transition: opacity .8s; }
 #blood.on { opacity: .3; transition: opacity .3s; }
@@ -91,7 +92,7 @@ body.log-open #log { opacity: 0; }
 #job-ic { position: absolute; left: calc(var(--u) * -2); top: calc(var(--u) * -12); width: calc(var(--u) * 28); height: calc(var(--u) * 30); }   /* 帽子に隠れないよう、顔グラの枠より少し上へ（2026-10-14） */   /* 職業の紋章（顔グラの左上。2026-10-14） */
 
 /* 上辺の真ん中：体力と防御（原作に近い並べ方。盤と同じ幅の長い棒、その下に効果） */
-#status { position: absolute; left: 50%; top: calc(var(--u) * 2); width: calc(var(--u) * 192); transform: translateX(-50%); pointer-events: none; text-shadow: 0 calc(var(--u) * 1) 0 #000; }
+#status { position: absolute; left: 50%; top: calc(var(--u) * -1); width: calc(var(--u) * 192); transform: translateX(-50%); pointer-events: none; text-shadow: 0 calc(var(--u) * 1) 0 #000; }
 .st-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; min-height: calc(var(--u) * 8); }
 .st-row .hp-lab { justify-self: start; }
 .st-row .blk { justify-self: center; }
@@ -200,8 +201,7 @@ body.log-open #log { opacity: 0; }
 /* 扇形に持つ：カードごとの傾き（--rot）。手をかざすと、その傾きの向きのまま持ち上がる */
 .card { transform: rotate(var(--rot, 0deg)); transform-origin: 50% 85%; }
 .card:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); z-index: 2; }   /* 持ち上がりを低く（2026-10-18 ユーザー指定。前は -20／-12） */
-.card.sel { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -7)); outline: calc(var(--u) * 1) solid var(--gold); z-index: 1; }
-.card.sel:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); }
+.card.sel { outline: calc(var(--u) * 1) solid var(--gold); z-index: 1; }   /* 選んだカードは光るだけ（持ち上げない。2026-10-20 ユーザー指定）。手をかざしたときの持ち上がりは、ほかのカードと同じ */
 .card.leaving { opacity: 0; transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -30)); }
 .k-move { --kc: #5c7236; } .k-atk { --kc: #8f2f2b; } .k-def { --kc: #425c8d; }
 .k-food { --kc: #cca673; } .k-potion { --kc: #d24a3c; } .k-treasure { --kc: #f0b84a; }
@@ -714,6 +714,7 @@ body[data-tut="forced"] #cardtip button[data-act="1マス移動に使う"] { out
     <div id="effects"></div>
     <canvas id="hp-fx" width="232" height="64"></canvas>
   </div>
+  <canvas id="over-top" width="480" height="270"></canvas>   <!-- 上のステータスと重なった敵を、ステータスの上に半分透かして（game3d.js の drawOverStatus） -->
   <canvas id="say-shadow"></canvas>
   <canvas id="say"></canvas>
   <div id="fontcmp"></div>

@@ -356,7 +356,7 @@ function rareCheck(s) {   // 一度きりの見た目の敵が、抽選した階
 function makeEnemy(e) {
   const rk = rare.floor === st?.floor && rare.skin[e.id];
   const look = PREVIEW_FOES ? { kind: PREVIEW_FOES[previewFoeAt++ % PREVIEW_FOES.length] } : rk ? { kind: rk, rare: true } : enemyLook(e.type), k = KIND[look.kind];
-  const v = { id: e.id, type: e.type, look, kind: look.kind, x: e.x, y: e.y, px: footX(e.x), py: footY(e.y), facing: 1, alpha: 1, tw: null, hp: e.hp, maxHp: e.maxHp, poison: e.poison ?? 0, stuck: !!e.immobilized };
+  const v = { id: e.id, type: e.type, look, kind: look.kind, x: e.x, y: e.y, px: footX(e.x), py: footY(e.y), facing: 1, alpha: 1, tw: null, hp: e.hp, maxHp: e.maxHp, atk: e.attack, poison: e.poison ?? 0, stuck: !!e.immobilized };
   v.anim = EIDLE();
   v.anim.t0 -= Math.random() * 1400;
   void k;
@@ -382,7 +382,7 @@ function syncView(full = false) {
   for (const e of st.enemies) {
     let v = !full && view.enemies.get(e.id);
     if (!v || v.dead) v = makeEnemy(e);
-    v.x = e.x; v.y = e.y; v.px = footX(e.x); v.py = footY(e.y); v.tw = null; v.hp = e.hp; v.maxHp = e.maxHp; v.poison = e.poison ?? 0; v.stuck = !!e.immobilized;
+    v.x = e.x; v.y = e.y; v.px = footX(e.x); v.py = footY(e.y); v.tw = null; v.hp = e.hp; v.maxHp = e.maxHp; v.atk = e.attack; v.poison = e.poison ?? 0; v.stuck = !!e.immobilized;
     faceEnemy(v); keep.set(e.id, v);
   }
   if (!full) for (const [id, v] of view.enemies) if (v.dying && !v.gone && !keep.has(id)) keep.set(id, v);
@@ -1532,6 +1532,7 @@ function draw(now) {
     const g = headH(v);   // 大きな絵は頭の上（top：足もとから頭までの高さ）
     const [bx, by] = S(v.px + 5, v.py - g - 4 + (v.lift ? -v.lift : 0));
     drawBadge(Math.round(bx), Math.round(by), v.hp, v.hp < v.maxHp);
+    if (atkBadge(v)) drawBadge(Math.round(bx), Math.round(by) + 10, v.atk, false, ctx, 'atk');   // 攻撃力の札（HP と攻撃力が違う敵だけ。2026-10-20 ユーザー指定）
     if (v.poison > 0) ctx.drawImage(spr('poison', String(Math.floor(clock / 400) % 2)), Math.round(bx) - 7, Math.round(by) + 1);
     if (v.stuck) { const [sx, sy] = S(v.px, v.py); blit(spr('stuck', '0'), sx, sy, k); }
   }
@@ -1544,26 +1545,69 @@ function draw(now) {
     ctx.globalAlpha = 1;
   }
   drawEscape();
+  drawOverStatus();
   // 階の切り替えの暗転（ゆっくり）
   if (view.fade > 0) { ctx.fillStyle = `rgba(11,17,32,${view.fade})`; ctx.fillRect(0, 0, NW, NH); }
   if (view.banner) drawBanner();
 }
 
-function drawDigits(text, x, y, color, center = false) {
+function drawDigits(text, x, y, color, center = false, g = ctx) {
   const w = text.length * 4 + 1;
   let cx = center ? x - Math.floor(w / 2) : x;
   for (const ch of text) {
     const name = ch === '+' ? 'plus' : ch === '-' ? 'minus' : ch;
     if (!SPR.groups.digit.frames[name]) { cx += 4; continue; }
-    ctx.drawImage(spr('digit', name, false, color === '#ffffff' ? null : { W: color }), cx, y);
+    g.drawImage(spr('digit', name, false, color === '#ffffff' ? null : { W: color }), cx, y);
     cx += 4;
   }
 }
-function drawBadge(x, y, n, hurt) {
+// 敵の札：HP（赤い帯）。攻撃力が HP と違う敵（2のロードオブザピット）は、その下に攻撃力（鋼色の帯）
+const atkBadge = v => v.atk != null && v.atk !== v.maxHp;
+function drawBadge(x, y, n, hurt, g = ctx, kind = 'hp') {
   const s = String(n), w = s.length * 4 + 6;
-  ctx.fillStyle = '#221b17'; ctx.fillRect(x, y, w, 9);
-  ctx.fillStyle = hurt ? '#8f2f2b' : '#d24a3c'; ctx.fillRect(x, y, 2, 9);
-  drawDigits(s, x + 2, y + 1, hurt ? '#e7a08a' : '#ffffff');
+  g.fillStyle = '#221b17'; g.fillRect(x, y, w, 9);
+  g.fillStyle = kind === 'atk' ? '#b8c4cc' : hurt ? '#8f2f2b' : '#d24a3c'; g.fillRect(x, y, 2, 9);
+  drawDigits(s, x + 2, y + 1, hurt ? '#e7a08a' : '#ffffff', false, g);
+}
+// 上のステータス（#status：HP・防御・体力の棒）と重なった敵（2026-10-20 ユーザー指定）：敵の絵と札を、ステータスより上の層（#over-top）に
+// 半分透かして描き直す。下の盤の敵はそのまま、ステータスはその上、さらに上に透けた敵、の順になり、重なった所は敵が上で透けて見える
+const OVER_ALPHA = 0.5, _oc = new THREE.Vector3();
+let overTopCtx = null;
+function statusRect() {   // #status の場所（ゲーム画面 480×270 の座標）
+  const s = $('#status'), g = $('#stage').getBoundingClientRect(), r = s.getBoundingClientRect(), k = NW / g.width;
+  return { x: (r.left - g.left) * k, y: (r.top - g.top) * k, w: r.width * k, h: r.height * k };
+}
+function drawOverStatus() {
+  const c = $('#over-top'); if (!c) return;
+  const g = overTopCtx ||= c.getContext('2d');
+  g.clearRect(0, 0, NW, NH);
+  if (!st || view.fade >= 1) return;
+  const R = statusRect(), hit = (x0, y0, x1, y1) => x1 > R.x && x0 < R.x + R.w && y1 > R.y && y0 < R.y + R.h;
+  g.save(); g.beginPath(); g.rect(R.x, R.y, R.w, R.h); g.clip(); g.imageSmoothingEnabled = false;
+  for (const v of view.enemies.values()) {
+    if (v.gone) continue;
+    const p = papers.get(v), img = p?.mat.map?.image; if (!img || !p.mesh.visible || !p.pivot.visible) continue;
+    p.mesh.updateMatrixWorld();
+    const hw = p.w / PX / 2, hh = p.h / PX / 2;
+    const pt = (x, y) => { _oc.set(x, y, 0).applyMatrix4(p.mesh.matrixWorld).project(cam); return [(_oc.x + 1) / 2 * NW, (1 - _oc.y) / 2 * NH]; };
+    const tl = pt(-hw, hh), tr = pt(hw, hh), bl = pt(-hw, -hh), br = pt(hw, -hh);
+    const xs = [tl[0], tr[0], bl[0], br[0]], ys = [tl[1], tr[1], bl[1], br[1]];
+    if (!hit(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys))) continue;
+    g.globalAlpha = OVER_ALPHA * p.alpha;
+    g.setTransform((tr[0] - tl[0]) / img.width, (tr[1] - tl[1]) / img.width, (bl[0] - tl[0]) / img.height, (bl[1] - tl[1]) / img.height, tl[0], tl[1]);
+    g.drawImage(img, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  g.globalAlpha = OVER_ALPHA;
+  for (const v of view.enemies.values()) {   // 札（盤の描き方と同じ場所）
+    if (v.gone || v.dying) continue;
+    const [bx, by] = S(v.px + 5, v.py - headH(v) - 4 + (v.lift ? -v.lift : 0)), x = Math.round(bx), y = Math.round(by);
+    const two = atkBadge(v), w = Math.max(String(v.hp).length, two ? String(v.atk).length : 0) * 4 + 6;
+    if (!hit(x, y, x + w, y + (two ? 19 : 9))) continue;
+    drawBadge(x, y, v.hp, v.hp < v.maxHp, g);
+    if (two) drawBadge(x, y + 10, v.atk, false, g, 'atk');
+  }
+  g.restore();
 }
 // 盤の上の印は、床にぴったり重ねた板に描く（カメラが傾いても床といっしょに傾く）
 let floorOverKey = '';
@@ -2816,8 +2860,8 @@ function showCardTip(id) {
     + `<button class="lockbtn${lk ? ' on' : ''}" title="${lk ? 'ロックを外す' : 'ロックする（十字キーの自動移動で使わない）'}"><i></i></button></div>`
     + `<div class="bd mm m"><p>${esc(c.description)}</p>${pred}${how}${lk ? '<p class="lockd">ロック中：自動移動で使わない</p>' : ''}<div class="acts"></div></div>`;
   el.querySelector('.lockbtn').onclick = ev => { ev.stopPropagation(); startAudio(); toggleLock(cobj.id); };
-  // ボタン：「使う」だけ上の行。下の行に、移動と捨てる（水色）。歩く・走るなどの移動のカードは「使う」と「1マス移動に使う」を
-  // 水色の「移動に使う」1つにまとめる（2026-10-09 テストプレイ）
+  // ボタン：1つずつ縦に並べる（横に並べない）。「捨てて引き直す」はいつも左端のいちばん下（2026-10-20 ユーザー指定）。
+  // 歩く・走るなどの移動のカードは「使う」と「1マス移動に使う」を、水色の「移動に使う」1つにまとめる（2026-10-09 テストプレイ）
   const acts = el.querySelector('.acts');
   const row = () => { const r = document.createElement('div'); r.className = 'row'; acts.appendChild(r); return r; };
   const add = (r, label, fn, cls = '') => { const b = document.createElement('button'); b.textContent = label; b.className = 'mm m ' + cls; b.dataset.act = label; b.onclick = ev => { ev.stopPropagation(); startAudio(); fn(); }; r.appendChild(b); };
@@ -2826,9 +2870,8 @@ function showCardTip(id) {
     add(row(), '捨てて引き直す', () => perform('discard', cobj.id), 'mv');
   } else {
     if (c.type !== '財宝') add(row(), '使う', () => useCard(cobj), 'primary');
-    const r = row();
-    add(r, '1マス移動に使う', () => { selected = cobj.id; startTargeting(cobj, 'forced'); hideCardTip(); renderHand(); }, 'mv');
-    add(r, '捨てて引き直す', () => perform('discard', cobj.id), 'mv');
+    add(row(), '1マス移動に使う', () => { selected = cobj.id; startTargeting(cobj, 'forced'); hideCardTip(); renderHand(); }, 'mv');
+    add(row(), '捨てて引き直す', () => perform('discard', cobj.id), 'mv');
   }
   el.style.left = 'calc(var(--u) * 356)';                // 盤の右の余白の下に固定（手札の横。盤には被らない。山札などは上の「もちもの一覧」の下へ移した）
   el.style.bottom = 'calc(var(--u) * 14)';                 // 少し上げた（2026-10-10）
