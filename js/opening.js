@@ -650,7 +650,7 @@ function onWinClick(ev) {
   }
 }
 function onKey(ev) {
-  if (!active) return;
+  if (!active || globalThis.Inn?.active) return;   // 宿屋の間は宿屋（とその上のエンディング）がキーを受ける（js/inn.js）
   ev.stopImmediatePropagation();    // OP のあいだはゲームのキーを止める
   if (ev.repeat) return;
   const k = ev.key, ok = k === 'Enter' || k === ' ';

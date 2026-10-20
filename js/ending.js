@@ -224,7 +224,8 @@ async function fade(to, n = 4) {   // 暗転（4段で、点滅しない）
 }
 async function credits(data) {
   skip = false;
-  el.credits.innerHTML = `<div class="mm l">${data.status === 'CLEARED' ? '地下迷宮を踏破した' : '地上へ帰還した'}</div><br>` +
+  const head = data.heading ?? (data.status === 'CLEARED' ? '地下迷宮を踏破した' : '地上へ帰還した');   // heading：''なら見出しなし（宿屋のエンディング）
+  el.credits.innerHTML = (head ? `<div class="mm l">${esc(head)}</div><br>` : '') +
     CREDITS.map(([k, t]) => `<div class="mm ${k === 't' ? 'l' : k === 's' ? 's dim' : 'm'}">${esc(t) || '&nbsp;'}</div>`).join('');
   show(el.credits); let y = 280;
   el.credits.style.transform = `translateY(calc(var(--u) * ${y}))`;
@@ -381,5 +382,22 @@ async function play(data, api = {}) {
   clearInterval(timer); timer = null; active = false; show(root, false); fixScroll();
   api.done?.();
 }
-globalThis.Ending = { play, get active() { return active; }, store };
+// 宿屋（猫の育成）のダンディ ×7 のエンディング（2026-10-20 ユーザー指定）：1枚絵（ENDING_BG.cat）を背景に、エンディングと同じクレジットを流すだけ。
+// 集計・おたから・名前・ランキングはない。曲は呼ぶ側（js/inn.js）が「次なる冒険へ」（Music.jingle('ending')）を流す
+async function roll(opts = {}, api = {}) {
+  if (active) return;
+  if (!root) buildDom();
+  active = true; frame = 0; skip = false; advance = null; clickWaiters = [];
+  for (const k of Object.keys(S)) delete S[k];
+  S.fade = 1; S.status = 'CLEARED'; S.bgKey = opts.bg || null; S.bg = true;
+  root.style.zIndex = '102';   // 宿屋（OP の上）から呼ぶので、OP・宿屋より上に出す
+  show(root); timer = setInterval(onTick, STEP);
+  await fade(0, 6);
+  await credits({ heading: opts.heading ?? '' });
+  hint('クリックで次へ'); await clickToGo(); hint('');
+  await fade(1, 6);
+  clearInterval(timer); timer = null; active = false; show(root, false); root.style.zIndex = ''; fixScroll();
+  api.done?.();
+}
+globalThis.Ending = { play, roll, get active() { return active; }, store };
 })();

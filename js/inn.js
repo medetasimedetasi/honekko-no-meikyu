@@ -11,6 +11,8 @@
 //   音楽プレイヤー：CD を1枚でも拾うと、小さな机の上に蓄音機が出る。蓄音機を押すと開き、拾った曲を聴ける（Music.play）。曲名はユーザー指定（CDS）
 //   コレクションケース：部屋の棚（窓の下の右の床置きのガラス戸の棚。SHELF）を押すと、全部のおたからを並べる。まだのものはシルエットと「？？？？」
 //   棚の背景と蓄音機の絵は猫育成グラフィックのセッション（CAT_ROOM_DATA.bg・gram・places）。CD のアイコンは背景グラフィックのセッションの手打ち（CD_ROWS、全曲共通）
+//   ダンディ ×7（いちばん大きい）に育った戻りのあと、次に宿屋を開いたとき1回だけ：部屋で ×7 の猫を見せてから、1枚絵（ENDING_BG.cat）を背景に
+//         エンディングのクレジットが流れる（Ending.roll、曲は「次なる冒険へ」）。終わったら部屋へ戻る。S.rollDone で二度と流さない（2026-10-20 ユーザー指定）
 //   Inn.open(onClose) / Inn.active / Inn.unlocked() / Inn.unlock() / Inn.earn(score) / Inn.depart()（出撃）/ Inn.returned()（戻った）
 (() => {
 'use strict';
@@ -64,7 +66,7 @@ const loadImg = src => new Promise(r => { const i = new Image(); i.onload = () =
 
 let root = null, cv = null, g = null, raf = 0, active = false, onClose = null, assets = null;
 let fx = null, parts = [], jig = null, moneyRoll = null, heartShown = 0, heartStep = 0, last = 0;
-let outing = null, notice = null, modal = null, playingCd = null;   // outing：おでかけの演出／notice：帰ってきた知らせ／modal：開いている窓（'music'・'case'）
+let outing = null, notice = null, modal = null, playingCd = null, openedAt = 0, rolling = false;   // outing：おでかけの演出／notice：帰ってきた知らせ／modal：開いている窓（'music'・'case'）
 const cat = { x: 330, face: -1, act: '立つ', t0: 0, until: 0, tx: 330, stepAt: 0, floor: 352, bed: false, box: null };
 const stage = () => stageOf(S.lv), CAT = () => scaleOf(S.lv), floorY = () => (S.lv < 5 ? 352 : 366);   // ダンディは大きいので床を画面の下へ
 
@@ -248,7 +250,22 @@ function loop(now) {
   }
   parts = parts.filter(p => p.t < p.life);
   drawOuting(now); drawNotice(now);
+  if (S.rollPending && !S.out && !notice && !outing && !modal && !fx && now - openedAt > ROLL_WAIT) { startRoll(); return; }
   raf = requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------- ダンディ ×7 のエンディング
+const ROLL_WAIT = 3000;   // 部屋で ×7 の猫を見せる長さ（ms、帰ってきた知らせが消えてから数える）
+function startRoll() {
+  if (!globalThis.Ending?.roll || rolling) return;
+  S.rollPending = false; S.rollDone = true; save();   // 先に印をつける（途中で閉じても二度と流さない）
+  rolling = true; cancelAnimationFrame(raf); root.classList.remove('show');
+  globalThis.Music?.jingle('ending');   // 次なる冒険へ
+  Ending.roll({ bg: 'cat' }, { done() {
+    rolling = false; root.classList.add('show'); fit();
+    globalThis.Music?.room?.();
+    last = performance.now(); enter(last); raf = requestAnimationFrame(loop);
+  } });
 }
 
 // ---------------------------------------------------------------- おでかけ・帰ってきた知らせ
@@ -272,7 +289,7 @@ function drawOuting(now) {
 }
 function drawNotice(now) {   // 帰ってきたとき：「猫が帰ってきた。」（CD を拾ってきたら CD と曲名も）。押すか 4.5秒で消える
   if (!notice || outing) return;
-  if (now - notice.t0 > 4500) { notice = null; return; }
+  if (now - notice.t0 > 4500) { notice = null; openedAt = now; return; }
   const h = notice.cd ? 150 : 70, y0 = Math.round((cv.height - h) / 2), w = cv.width - 192;
   g.fillStyle = 'rgba(11,17,32,0.85)'; g.fillRect(96, y0, w, h);
   g.fillStyle = '#506573'; g.fillRect(96, y0, w, 2); g.fillRect(96, y0 + h - 2, w, 2);
@@ -320,7 +337,7 @@ function build() {
   const at = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; };
   const inBox = (p, b) => p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h;
   cv.addEventListener('pointerdown', e => {
-    if (notice) { notice = null; return; }                 // 知らせは押すと消える
+    if (notice) { notice = null; openedAt = performance.now(); return; }   // 知らせは押すと消える
     if (outing) return;
     const p = at(e);
     if (inBox(p, catBox())) pet();                         // 猫をクリック（なでる）
@@ -392,7 +409,7 @@ async function open(cb) {
   active = true; fx = null; parts = []; jig = null; moneyRoll = null; outing = null; modal = null; playingCd = null; notice = null;
   heartShown = 0; heartStep = 0;
   root.querySelector('.inn-modal').classList.remove('show');
-  renderHead(); renderFoods(); root.classList.add('show'); fit();
+  renderHead(); renderFoods(); root.classList.add('show'); fit(); openedAt = performance.now();
   globalThis.Music?.room?.(); if (!S.out) se('cat_trill');   // 部屋の曲（ワルツ）と、猫が出てきたあいさつ（ンルッ？）
   if (S.news) {   // おでかけから帰ってきた知らせ（CD を拾ってきたら CD と曲名）
     const nm = S.news.cd && (CDS.find(([k]) => k === S.news.cd) || [])[1];
@@ -400,16 +417,20 @@ async function open(cb) {
     if (nm) se('unlock');
     S.news = null; save();
   }
+  if (notice) openedAt = Infinity;   // 知らせがあるときは、消えてからロールまでの間を数える
   last = performance.now(); enter(last); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
 }
 function close() {
-  if (!active) return;
+  if (!active || rolling) return;
   active = false; cancelAnimationFrame(raf); root.classList.remove('show'); se('ui_cancel');
   globalThis.Music?.title();
   const cb = onClose; onClose = null; cb?.();
 }
 // 宿屋が開いているあいだは、ほかの画面（OP・ゲーム）にキーを渡さない。Esc でもどる
-addEventListener('keydown', ev => { if (!active) return; ev.stopImmediatePropagation(); if (ev.key === 'Escape') { ev.preventDefault(); if (modal) closeModal(); else close(); } }, true);
+addEventListener('keydown', ev => {
+  if (!active) return;
+  if (rolling) { if (!['Enter', ' ', 'Escape'].includes(ev.key)) ev.stopImmediatePropagation(); return; }   // エンディングの間：送る・飛ばすキーだけ Ending へ（OP・ゲームには渡さない）
+  ev.stopImmediatePropagation(); if (ev.key === 'Escape') { ev.preventDefault(); if (modal) closeModal(); else close(); } }, true);
 
 globalThis.Inn = {
   open, close, get active() { return active; },
@@ -430,6 +451,7 @@ globalThis.Inn = {
     if (S.armed) {
       S.armed = false; S.full = 0; S.love = 0;
       if (++S.prog >= NEED[S.lv]) { S.lv++; S.prog = 0; }
+      if (S.lv >= LV_MAX && !S.rollDone) S.rollPending = true;   // ダンディ ×7 に届いた → 次に宿屋を開いたときエンディング（1回だけ）
     }
     save();
   },
