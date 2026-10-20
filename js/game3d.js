@@ -7,11 +7,16 @@
 (() => {
 'use strict';
 globalThis.startGame3D = (THREE) => {
-const { HK, HKTrace, SPR, PAL32 } = globalThis;
+let HK = globalThis.HK;                     // ルール：1は logic.js の HK、2（CardRogue）は logic2.js の HK2（useRules で差し替え）
+const { HKTrace, SPR, PAL32 } = globalThis;
 if (globalThis.SPR_DIAG) Object.assign(SPR.groups, globalThis.SPR_DIAG);   // 斜め前・斜め後ろのドット
 if (globalThis.SPR_HD) Object.assign(SPR.groups, globalThis.SPR_HD);       // 大きく細かい敵の絵（試し。js/enemies_hd.js）
 if (globalThis.SPR_ICON) SPR.groups.icon = globalThis.SPR_ICON;              // カードの絵（共有32色・外周1ドット黒、18×18。js/icons.js）
 if (globalThis.SPR_ICON_MAP) Object.assign(SPR.cardIcon, globalThis.SPR_ICON_MAP);   // 移動のカードは靴の色で段階を分ける
+if (globalThis.SPR_ICON_CR) {                                                  // 2（CardRogue）の新しいカードの絵（js/icons_cardrogue.js）。別の組 icon_cr。剣・黄金剣・革鎧は1の絵を共有
+  const C = globalThis.SPR_ICON_CR; SPR.groups.icon_cr = { w: C.w, h: C.h, pal: C.pal, frames: C.frames }; Object.assign(SPR.cardIcon, C.share);
+}
+const iconRef = (cardId, dflt = 'scroll') => { const m = st?.version === 2 && globalThis.SPR_ICON_CR?.iconOf[cardId]; return m ? ['icon_cr', m] : ['icon', SPR.cardIcon[cardId] || dflt]; };   // カードの絵の [組, 名前]
 if (globalThis.CARD_BACK) {                                                    // カードの裏面（木瓜形の紋。js/cardback.js）
   document.documentElement.style.setProperty('--back-card', `url(${CARD_BACK.card})`);
   document.documentElement.style.setProperty('--back-pile', `url(${CARD_BACK.pile})`);
@@ -63,6 +68,8 @@ const ANIM_SETS = {
     idle_1: [{ breath: 1 }],                                                       // 待機の呼吸
     move_0: [{ leg: 0, dy: 'max' }], move_1: [{ leg: 1, dy: 'max' }],              // 敵の足踏み（1マスに1歩）
   },
+  float: { move_0: [], move_1: [] },
+  robe: { bk_move_0: [], bk_move_1: [] },   // 長いローブの敵（リッチ・ショーチュー）：斜め後ろは足がローブで見えないので足踏みしない（斜め前はみんなと同じ。ユーザー指定 2026-10-14）   // 足のない敵（レイス。絵の animSet）：足踏みしない。移動は弾まず呼吸のまま滑る（ユーザー指定 2026-10-14）
   player: {
     walk_0: [{ leg: 0, dx: -2 }, { leg: 1, dx: 2 }, { bob: 1 }], walk_1: [{ leg: 1, dy: 5 }],   // 歩き：踏み出し → すれちがい（右足）
     walk_2: [{ bob: 1 }], walk_3: [{ leg: 0, dy: 5 }],                                          //   → 踏み込み → すれちがい（左足）。上げた足はすその後ろに隠れる
@@ -159,7 +166,10 @@ const ENEMY_LOOK = {
   'depth-7': { kind: 'zombie', recolor: { '#7a8e9c': '#cca673', '#6e655a': '#897d69', '#506573': '#8a5a38', '#2c3a48': '#5c422c' } },   // グール（ゾンビの肌を黄ばんだ土気色に。色トレスの線も肌に合わせる）
   'depth-8': { kind: 'ogre' }, 'depth-9': { kind: 'troll' }, 'depth-10': { kind: 'gargoyle' },
   'depth-11': { kind: 'minotaur' }, 'depth-12': { kind: 'golem' },
-  'depth-13': { kind: 'wraith' },   // 本編（30階まで）には出ない敵。絵の試し（2026-10-10）
+  'depth-13': { kind: 'wraith' },   // ここから下は2（CardRogue、60階）だけに出る敵（2026-10-18 割り当て）
+  'depth-14': { kind: 'dullahan' }, 'depth-15': { kind: 'basilisk' }, 'depth-16': { kind: 'chimera' }, 'depth-17': { kind: 'manticore' },
+  'depth-18': { kind: 'wyvern' }, 'depth-19': { kind: 'cyclops' }, 'depth-20': { kind: 'iron_golem' }, 'depth-21': { kind: 'vampire' }, 'depth-22': { kind: 'lich' },
+  pitLord: { kind: 'pit_lord' },    // B59F のボス（ロードオブザピット）
 };
 const DEEP_SKINS = ['#d9d1b8', '#93a68c', '#8c9478', '#c9a77a', '#8a9aa8', '#9a8bb0', '#b08a7a', '#7f9fb0'];
 function enemyLook(type) {
@@ -175,7 +185,9 @@ const KIND = {
   orc: { ground: 24, move: [['move_0', 120], ['move_1', 120]], moveMs: 240 },
 };
 for (const k of ['hobgoblin']) KIND[k] = KIND.goblin;
-for (const k of ['skeleton', 'zombie', 'ogre', 'troll', 'gargoyle', 'minotaur', 'golem', 'wraith']) KIND[k] = KIND.orc;
+for (const k of ['skeleton', 'zombie', 'ogre', 'troll', 'gargoyle', 'minotaur', 'golem', 'wraith', 'dullahan', 'basilisk', 'chimera', 'manticore', 'wyvern', 'cyclops', 'iron_golem', 'vampire', 'lich', 'death_knight', 'shochu']) KIND[k] = KIND.orc;
+KIND.cat = KIND.goblin;
+for (const g of Object.keys(globalThis.SPR_HD || {})) { const n = g.replace(/_hd$/, ''); if (!KIND[n]) KIND[n] = KIND.orc; }   // 絵だけ先に入れた敵（割り当て前）も、動き方はオークと同じにしておく
 // 待機（呼吸）：idle_0＝吐いた姿、idle_1＝吸って胸から上が1ドット上がった姿
 const HOP_PX = 2;   // 敵が歩くときの弾みの高さ（画面のドット）
 const EIDLE = () => newEntityAnim([['idle_0', 820], ['idle_1', 640]], true);
@@ -255,6 +267,17 @@ function sfx(name) {
     case 'card': noise(0.04, 'highpass', 3000, 0, 0.04); break;
     case 'bump': tone('sine', 120, 90, 0.07, 0.12); break;
     case 'shoot': noise(0.09, 'bandpass', 3500, 1500, 0.08, 3); break;
+    case 'rumble': noise(1.1, 'lowpass', 220, 50, 0.3); noise(0.5, 'lowpass', 600, 120, 0.12); break;   // 落盤の地鳴り（仮の合成音）
+    // 2（CardRogue）の魔法・技（仮の合成音。2026-10-18）
+    case 'magic': tone('sine', 520, 1040, 0.18, 0.05); tone('triangle', 780, 1560, 0.14, 0.03, 0.03); break;
+    case 'explode': noise(0.45, 'lowpass', 900, 120, 0.22); tone('sine', 110, 45, 0.3, 0.18); break;
+    case 'thunder': noise(0.12, 'highpass', 2500, 0, 0.12); noise(0.5, 'lowpass', 400, 80, 0.14); break;
+    case 'poison': noise(0.5, 'bandpass', 900, 500, 0.05, 2); break;
+    case 'barrier': tone('triangle', 660, 0, 0.3, 0.05); tone('triangle', 990, 0, 0.3, 0.04, 0.05); tone('sine', 1320, 0, 0.25, 0.03, 0.1); break;
+    case 'power': tone('sawtooth', 160, 420, 0.3, 0.03); tone('sine', 330, 880, 0.3, 0.04); break;
+    case 'whoosh': noise(0.18, 'bandpass', 600, 2400, 0.08, 1.5); break;
+    case 'crack': noise(0.4, 'lowpass', 500, 90, 0.25); tone('square', 90, 50, 0.2, 0.05); break;
+    case 'teleport': tone('sine', 900, 300, 0.16, 0.05); tone('sine', 300, 1200, 0.2, 0.04, 0.18); break;
   }
 }
 
@@ -273,7 +296,7 @@ function snap(s) {
     player: { ...s.player }, floor: s.floor, map: s.map.slice(), exit: { ...s.exit },
     enemies: s.enemies.map(e => ({ ...e })), items: s.groundItems.map(i => ({ ...i })),
     hand: s.hand.map(c => ({ ...c })), status: s.gameStatus, log: s.log.slice(),
-    drawN: s.drawPile.length, discN: s.discardPile.length,
+    drawN: s.drawPile.length, discN: s.discardPile.length, waitN: s.waitingPile?.length ?? 0,
     prefer: { w: s.preferWeaponsNextFloor, a: s.preferArmorNextFloor, s: s.preferScrollsNextFloor },
   };
 }
@@ -295,8 +318,44 @@ function makePlayer() {
   const p = { x: st.player.x, y: st.player.y, px: footX(st.player.x), py: footY(st.player.y), dir: 's', alpha: 1, tw: null, ox: 0, oy: 0, lift: 0, flip: false };
   playerIdle(p); return p;
 }
+// 確認用（3D版.html?dev&foes）：盤の敵を、本編に出ない新しい敵の絵に順番に差し替えて見る（絵だけ。強さや動きのルールは元の敵のまま）
+const PREVIEW_FOES = /[?&]dev\b/.test(location.search) && /[?&]foes\b/.test(location.search)
+  ? ((new URLSearchParams(location.search).get('foes') || '').split(',').filter(Boolean)).concat() : null;   // foes=名前,名前 で見たい絵だけ（なければ新しい敵ぜんぶ）
+if (PREVIEW_FOES && !PREVIEW_FOES.length) PREVIEW_FOES.push('wraith', 'dullahan', 'basilisk', 'chimera', 'manticore', 'wyvern', 'cyclops', 'iron_golem', 'vampire', 'lich', 'death_knight', 'shochu', 'cat');
+let previewFoeAt = 0;
+// ---- レアスキン（2026-10-18 ユーザー指定）：見た目だけ替える。名前・強さ・動きのルールは元の敵のまま
+// レイス（depth-13）→ ダンディ・キャット（cat）：レイスが出るごとに 1/5 で抽選（B31〜39F に最大12体出るので 1/3 から下げた。2026-10-18）。出るのは1回の探索で1体だけ（出たらその探索ではもう抽選しない。
+//   倒さずに階を降りたら、次の探索まで出ない）。一度倒すと二度と出ない（このブラウザに記録。RARE_KEY）
+// リッチ（depth-22）→ クーリンガンさん（shochu）：リッチごとに 1/3（何体でも）
+// 敵は階に入ったときにまとめて作られ、番号は階ごとに振り直される（logic2 の _e）。抽選は階に入ったとき、その階の敵を番号順に。
+// 結果は探索の保存（saveRun の rare）に入れて、つづきからで引き直さない
+const RARE_KEY = 'honekko.rare.v1';
+const RARE_SKINS = { 'depth-13': { kind: 'cat', once: true, p: 1 / 5 }, 'depth-22': { kind: 'shochu', p: 1 / 3 } };
+const newRare = () => ({ floor: 0, skin: {}, seen: {} });   // floor：抽選した階／skin：敵の番号 → 見た目（なしは null）／seen：この探索で出た一度きりの見た目
+let rare = newRare();
+function rareGone() { try { return JSON.parse(localStorage.getItem(RARE_KEY)) || {}; } catch { return {}; } }
+function rareRoll() {
+  if (!st) return;
+  if (rare.floor !== st.floor) { rare.floor = st.floor; rare.skin = {}; }
+  let gone = null;
+  for (const e of st.enemies) {
+    if (e.id in rare.skin) continue;
+    const r = RARE_SKINS[e.type]; let k = null;
+    if (r && !(r.once && (rare.seen[r.kind] || (gone ??= rareGone())[r.kind])) && Math.random() < r.p) { k = r.kind; if (r.once) rare.seen[k] = true; }
+    rare.skin[e.id] = k;
+  }
+}
+function rareCheck(s) {   // 一度きりの見た目の敵が、抽選した階で盤からいなくなった＝倒した（2の敵は倒す以外で消えない）
+  if (!s || s.floor !== rare.floor) return;
+  for (const [id, k] of Object.entries(rare.skin)) {
+    if (!k || !Object.values(RARE_SKINS).some(r => r.once && r.kind === k) || s.enemies.some(e => e.id === +id)) continue;
+    const gone = rareGone(); if (gone[k]) continue;
+    gone[k] = Date.now(); try { localStorage.setItem(RARE_KEY, JSON.stringify(gone)); } catch { /* 記録できないときは、また出る */ }
+  }
+}
 function makeEnemy(e) {
-  const look = enemyLook(e.type), k = KIND[look.kind];
+  const rk = rare.floor === st?.floor && rare.skin[e.id];
+  const look = PREVIEW_FOES ? { kind: PREVIEW_FOES[previewFoeAt++ % PREVIEW_FOES.length] } : rk ? { kind: rk, rare: true } : enemyLook(e.type), k = KIND[look.kind];
   const v = { id: e.id, type: e.type, look, kind: look.kind, x: e.x, y: e.y, px: footX(e.x), py: footY(e.y), facing: 1, alpha: 1, tw: null, hp: e.hp, maxHp: e.maxHp, poison: e.poison ?? 0, stuck: !!e.immobilized };
   v.anim = EIDLE();
   v.anim.t0 -= Math.random() * 1400;
@@ -313,8 +372,9 @@ function lookAtPlayer() {
 }
 // 難易度の帯（1〜10階・11〜20階・21〜30階）に出る敵のうち、いちばん高い攻撃力。
 // 元ロジックでは、階 F の敵の強さは f＝⌊(F−1)/3⌋＋1 から f＋2 まで（攻撃力＝強さ）。帯でいちばん強い敵は帯の最後の階にだけ出る
-const tierMaxAtk = floor => { const end = Math.min(30, Math.ceil(floor / 10) * 10); return Math.floor((end - 1) / 3) + 3; };
+const tierMaxAtk = floor => { const end = Math.min(HK.LAST_FLOOR, Math.ceil(floor / 10) * 10); return Math.floor((end - 1) / 3) + 3; };
 function syncView(full = false) {
+  rareRoll();   // レアスキン：この階の抽選がまだなら
   if (full || !view.player) view.player = makePlayer();
   const p = view.player;
   p.x = st.player.x; p.y = st.player.y; p.px = footX(p.x); p.py = footY(p.y); p.tw = null; p.alpha = 1;
@@ -349,6 +409,22 @@ const BOARD_THEMES = {
   '地下水': { bgDeep: '#0e1c3f', rock: '#2b3e6d', rockTop: '#425c8d', rockHi: '#647091', seam: '#2b3e6d', floorA: '#647091', floorB: '#7582a9',
     floorHi: '#b8c4cc', floorLo: '#425c8d', ao: '#2b3e6d', mossRate: 0.15,
     floorRamp: ['#7582a9', '#647091', '#425c8d', '#2b3e6d', '#5c7236'], wallRamp: ['#425c8d', '#2b3e6d', '#0e1c3f'], hemiSky: '#dfe6ff', hemiGround: '#1d2a4a', sun: '#e8eeff' },
+  // 2026-10-13 追加のゾーン（ユーザーがゲームの中で見比べて選んだ）。キノコと蛍の森＝B「灰緑の石」（床は苔と松明と同じ段、壁は苔の緑）
+  'キノコと蛍の森': { bgDeep: '#18222d', rock: '#34402a', rockTop: '#5c7236', rockHi: '#5c7236', seam: '#4a4640', floorA: '#897d69', floorB: '#a19077',
+    floorHi: '#a19077', floorLo: '#6e655a', ao: '#4a4640', mossRate: 0.25,
+    floorRamp: ['#a19077', '#897d69', '#6e655a', '#4a4640', '#5c7236'], wallRamp: ['#5c7236', '#34402a', '#18222d'], hemiSky: '#eef2e0', hemiGround: '#18222d', sun: '#eef2e0' },
+  // メカとバイオ＝C「灰褐の鉄」（床は灰褐、壁は青灰。苔の段はさびた肉の赤 #8f2f2b）。A「鋼の床」は雰囲気はいいが壁と床が読みづらい（ユーザー）
+  'メカとバイオ': { bgDeep: '#2c3a48', rock: '#506573', rockTop: '#7a8e9c', rockHi: '#7a8e9c', seam: '#4a4640', floorA: '#897d69', floorB: '#a19077',
+    floorHi: '#a19077', floorLo: '#6e655a', ao: '#4a4640', mossRate: 0.15,
+    floorRamp: ['#a19077', '#897d69', '#6e655a', '#4a4640', '#8f2f2b'], wallRamp: ['#7a8e9c', '#506573', '#2c3a48'], hemiSky: '#eceae4', hemiGround: '#2c3a48', sun: '#eceae4' },
+  // 水晶洞窟＝A「岩の床と水晶の壁」（床は灰褐の岩、壁は水晶の青白。苔の段は水晶のかけら #7582a9）
+  '水晶洞窟': { bgDeep: '#2b3e6d', rock: '#647091', rockTop: '#b8c4cc', rockHi: '#b8c4cc', seam: '#4a4640', floorA: '#897d69', floorB: '#a19077',
+    floorHi: '#a19077', floorLo: '#6e655a', ao: '#4a4640', mossRate: 0.15,
+    floorRamp: ['#a19077', '#897d69', '#6e655a', '#4a4640', '#7582a9'], wallRamp: ['#b8c4cc', '#647091', '#2b3e6d'], hemiSky: '#e8eeff', hemiGround: '#2b3e6d', sun: '#e8eeff' },
+  // 黒曜石と光る回路（B60F）＝A「黒曜石の床」（床は青灰、壁はほぼ黒。苔の段は回路の緑 #8eaa48）
+  '黒曜石と光る回路': { bgDeep: '#0b1120', rock: '#18222d', rockTop: '#2c3a48', rockHi: '#2c3a48', seam: '#18222d', floorA: '#506573', floorB: '#7a8e9c',
+    floorHi: '#7a8e9c', floorLo: '#2c3a48', ao: '#18222d', mossRate: 0.2,
+    floorRamp: ['#7a8e9c', '#506573', '#2c3a48', '#18222d', '#8eaa48'], wallRamp: ['#2c3a48', '#18222d', '#0b1120'], hemiSky: '#e4f0e0', hemiGround: '#0b1120', sun: '#e4f0e0' },
 };
 let boardTheme = null;
 const PX = T;
@@ -547,7 +623,7 @@ const scene = new THREE.Scene();
 // カメラ：本当に傾けた3Dのカメラ（南の斜め上から見下ろす）。光の試作と同じ仕組み
 // ・elev … 仰角（ふだん45度）／fit … 1 で床の1ドット＝画面の1ドット／persp … 遠近（0＝なし）
 const cam = new THREE.OrthographicCamera(-10, 10, 5.625, -5.625, 1, 400);
-const CAM0 = { cx: 4, cz: 4, zoom: 1, elev: 45, fit: 1, persp: 0, dof: 0 };   // 盤は真ん中。上の壁は体力の棒の下にもぐる（手札の絵が見えるよう、下を空ける）
+const CAM0 = { cx: 4, cz: 4.33, zoom: 1, elev: 45, fit: 1, persp: 0, dof: 0 };   // cz：2026-10-18 盤を約8ドット上へ（ユーザー指定。前は4）   // 盤は真ん中。上の壁は体力の棒の下にもぐる（手札の絵が見えるよう、下を空ける）
 const camS = { ...CAM0, sx: 0, sy: 0 };
 const Po = new THREE.Matrix4(), Pp = new THREE.Matrix4(), Pm = new THREE.Matrix4();
 const DIST = 60, NEAR = 1, FAR = 200;
@@ -607,6 +683,152 @@ function newGrain(x) {
   return { x: x ?? Math.random() * NW, y: 10 + Math.random() * 245, v: far ? 0.6 + Math.random() * 0.4 : 1.3 + Math.random() * 0.9, far,
     ph: Math.random() * 6.28, amp: 0.6 + Math.random() * 1.4, len: far || Math.random() < 0.65 ? 1 : 2 };
 }
+// キノコと蛍の森の動き（2026-10-13、ユーザー指定）：光るキノコは淡く明滅、蛍は住みかで灯る・画面を横切る・奥を周遊する。
+// 手前を半透明の粒が横切る分は drawBgFore。100ms ごとのコマで、位置は整数。明るさは急に変えず、なだらかに灯って消える。
+// 光は背景の色と混ぜて描くので、パレット外の色になる（ユーザー了承）。動きは時刻から決まるので、状態は持たない
+const hash01 = (a, b) => { let h = Math.imul(a + 1, 374761393) ^ Math.imul(b + 7, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const flyPulse = (k, P, ph) => Math.max(0, Math.sin(2 * Math.PI * k / P + ph)) ** 1.5;   // 半分の時間は消えていて、なだらかに灯って消える
+function px1(g, x, y, col, a) { if (a <= 0.01 || x < 0 || y < 0 || x >= NW || y >= NH) return; g.globalAlpha = Math.min(1, a); g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+function glowDot(g, x, y, col, a, halo) { px1(g, x, y, col, a); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) px1(g, x + dx, y + dy, col, a * halo); }
+// 派手な蛍（最終ステージ、2026-10-13 ユーザー指定「緑の蛍みたいな派手めな粒子」）：十字のにじみに、斜めと2ドット先の光を足す
+function bigDot(g, x, y, col, a) { glowDot(g, x, y, col, a, 0.65); for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) px1(g, x + dx, y + dy, col, a * 0.3); for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) px1(g, x + dx, y + dy, col, a * 0.2); }
+// 横切るもの：i 番目の枠は「横切る→しばらく休む」をくり返す。向き・高さ・ゆれは回ごとに変わる。速さは px/コマ
+function crosser(i, k, speed, pause, seed) {
+  const v = speed[0] + hash01(i, seed) * (speed[1] - speed[0]), D = Math.ceil((NW + 20) / v);
+  const L = D + pause[0] + Math.floor(hash01(i, seed + 1) * (pause[1] - pause[0])), kk = k + Math.floor(hash01(i, seed + 2) * L), u = kk % L;
+  if (u >= D) return null;
+  const c = Math.floor(kk / L), r = j => hash01(i * 97 + c, seed + j), dir = r(3) < 0.5 ? 1 : -1;
+  const x = dir > 0 ? -10 + u * v : NW + 10 - u * v, y = 30 + r(4) * 190 + (6 + r(5) * 14) * Math.sin(2 * Math.PI * u / (60 + r(6) * 60) + r(7) * 6.28);
+  return { x: Math.round(x), y: Math.round(y), ph: r(8) * 6.28, P: 30 + Math.floor(r(9) * 20) };
+}
+function drawFlies(g, F, k) {
+  if (F.big) g.globalCompositeOperation = 'lighter';
+  for (const [i, m] of (F.mush || []).entries()) {          // 光るキノコ：1株ずつ5〜9秒で、淡い光がなだらかに満ちて引く
+    const P = 50 + Math.floor(hash01(i, 11) * 40), b = (0.5 - 0.5 * Math.cos(2 * Math.PI * k / P + hash01(i, 12) * 6.28)) ** 1.3;
+    if (b < 0.02) continue;
+    g.fillStyle = F.mushGlow;
+    g.globalAlpha = 0.45 * b; for (let j = 0; j < m.core.length; j += 2) g.fillRect(m.core[j], m.core[j + 1], 1, 1);
+    g.globalAlpha = 0.2 * b; for (let j = 0; j < m.halo.length; j += 2) g.fillRect(m.halo[j], m.halo[j + 1], 1, 1);
+  }
+  for (let i = 0; i < F.roam; i++) {                  // 奥を周遊：暗く小さく、大きな輪をゆっくり回る（60〜110秒で1周）
+    const r = j => hash01(i, 20 + j), Px = 600 + Math.floor(r(0) * 500), Py = Px * (0.5 + r(1) * 0.3);
+    const x = Math.round(240 + (140 + r(2) * 80) * Math.sin(2 * Math.PI * k / Px + r(3) * 6.28)), y = Math.round(125 + (50 + r(4) * 60) * Math.sin(2 * Math.PI * k / Py + r(5) * 6.28));
+    const a = 0.55 * (0.3 + 0.7 * flyPulse(k, 50 + Math.floor(r(6) * 30), r(7) * 6.28));
+    if (F.big) glowDot(g, x, y, F.far, a, 0.4); else px1(g, x, y, F.far, a);
+  }
+  for (const [i, [hx, hy]] of (F.homes || []).entries()) {   // 住みかの蛍：4秒か6秒で灯って消える。まわり1〜3ドットを漂う
+    const r = j => hash01(i, 40 + j), b = flyPulse(k, r(0) < 0.5 ? 40 : 60, r(1) * 6.28);
+    if (b <= 0) continue;
+    const x = hx + Math.round((1 + Math.floor(r(2) * 3)) * Math.sin(2 * Math.PI * k * (1 + Math.floor(r(3) * 2)) / 120 + r(4) * 6.28));
+    const y = hy + Math.round((1 + Math.floor(r(5) * 2)) * Math.sin(2 * Math.PI * k * (1 + Math.floor(r(6) * 2)) / 120 + r(7) * 6.28));
+    glowDot(g, x, y, F.glow, b, 0.5);
+  }
+  for (let i = 0; i < F.cross; i++) {                 // 横切る蛍：左右の端から現れ、上下にゆれながら30〜50秒で画面を横切る
+    const sp = F.speed || 1, c = crosser(i, k, [1.0 * sp, 1.6 * sp], [100, 400], 60); if (!c) continue;
+    const a = 0.3 + 0.7 * flyPulse(k, c.P, c.ph);
+    if (F.big) bigDot(g, c.x, c.y, F.glow, a); else glowDot(g, c.x, c.y, F.glow, a, 0.5);
+  }
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+}
+// メカとバイオの埃（2026-10-13、ユーザー指定「砂埃の埃版、青白系の細かい粒子が前後に漂う」）：奥は暗い1ドット、手前は明るめの半透明で一部は2×2。
+// ゆっくり流れながら、ふわふわゆれる。点滅はしない（明るさはゆっくり少しだけ変わる）。位置は画面の端でまわり込む
+function drawDust(g, D, k, fore) {   // D.rise：少しずつ昇る（水晶洞窟の光の粒）
+  const n = fore ? D.fore : D.back, s = fore ? 2.2 : 1, col = fore ? D.foreCol : D.col;
+  for (let i = 0; i < n; i++) {
+    const r = j => hash01(i, (fore ? 300 : 200) + j);
+    const vx = (r(0) - 0.5) * 0.3 * s, vy = ((r(1) - 0.5) * 0.12 - (D.rise || 0)) * s, Ax = (2 + r(2) * 5) * s, Ay = (2 + r(3) * 5) * s, Px = 90 + r(4) * 150, Py = 70 + r(5) * 130;
+    const x = Math.round((((r(6) * (NW + 20) + vx * k + Ax * Math.sin(2 * Math.PI * k / Px + r(7) * 6.28)) % (NW + 20)) + NW + 20) % (NW + 20)) - 10;
+    const y = Math.round((((r(8) * (NH + 20) + vy * k + Ay * Math.sin(2 * Math.PI * k / Py + r(9) * 6.28)) % (NH + 20)) + NH + 20) % (NH + 20)) - 10;
+    const a = (fore ? 0.22 + r(10) * 0.25 : 0.25 + r(10) * 0.3) * (0.75 + 0.25 * Math.sin(2 * Math.PI * k / (150 + r(11) * 150) + r(12) * 6.28));
+    if (fore && r(13) < 0.35) { for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) px1(g, x + dx, y + dy, col, a * 0.6); }
+    else px1(g, x, y, col, a);
+  }
+  g.globalAlpha = 1;
+}
+// 水晶洞窟の光（2026-10-13）：①選んだ水晶の柱（S.glow、6本）だけが、柱まるごと1本ずつ6〜10秒で光って引く（ユーザー指定：光の帯はやめた）。
+// まわり10ドットまでも3段の輪で照らす（加算。岩やほかの水晶にも光がかかる）。柱ごとの光の絵は最初に1回作って重ねる（glowSprites）
+// ②きらめき（drawShine の中に説明）。光る柱・縁は 動き_水晶.py が書き出す。
+// 光は背景と混ぜるのでパレット外の色になる
+// 光の絵：[{core:[x,y,…] か [x,y,段,…]（lv のとき）, halo:[x,y,段,…]}] から、芯とまわりの光の絵を1回だけ作る（水晶の柱・回路の紋）
+const glowCache = new WeakMap();
+function glowSprites(list, col, haloCol) {
+  if (glowCache.has(list)) return glowCache.get(list);
+  const sp = list.map(m => {
+    const cs = m.lv ? 3 : 2, xs = [], ys = [];
+    for (let j = 0; j < m.halo.length; j += 3) { xs.push(m.halo[j]); ys.push(m.halo[j + 1]); }
+    const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x + 1, h = Math.max(...ys) - y + 1;
+    const core = canvas(w, h), halo = canvas(w, h), cg = core.getContext('2d'), hg = halo.getContext('2d');
+    cg.fillStyle = col; for (let j = 0; j < m.core.length; j += cs) { cg.globalAlpha = m.lv ? m.core[j + 2] / 3 : 1; cg.fillRect(m.core[j] - x, m.core[j + 1] - y, 1, 1); }
+    hg.fillStyle = haloCol; for (let j = 0; j < m.halo.length; j += 3) { hg.globalAlpha = m.halo[j + 2] / 3; hg.fillRect(m.halo[j] - x, m.halo[j + 1] - y, 1, 1); }
+    return { x, y, core, halo };
+  });
+  glowCache.set(list, sp); return sp;
+}
+function drawShine(g, S, k) {
+  const sp = glowSprites(S.glow, S.col, S.haloCol);
+  for (const [i, m] of sp.entries()) {                 // ①光る柱：6〜10秒で、光がなだらかに満ちて引く
+    const P = 60 + Math.floor(hash01(i, 520) * 40), b = (0.5 - 0.5 * Math.cos(2 * Math.PI * k / P + hash01(i, 521) * 6.28)) ** 1.3;
+    if (b < 0.02) continue;
+    g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.45 * b; g.drawImage(m.halo, m.x, m.y);
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 0.65 * b; g.drawImage(m.core, m.x, m.y);
+  }
+  // ②きらめき（ユーザー指定「きらきらしたエフェクト」）：星の形が 点 → 十字 → 長い十字＋斜め → 縮む と1.4秒で大きくなって縮む（明るさの点滅ではなく形の大小）。
+  // 白を加算で重ねる。場所は半分が水晶の上の縁、半分が「いま光っている柱」の上（その柱が暗いときは縁）
+  const tips = S.tips, glowB = (j, kk) => (0.5 - 0.5 * Math.cos(2 * Math.PI * kk / (60 + Math.floor(hash01(j, 520) * 40)) + hash01(j, 521) * 6.28)) ** 1.3;
+  g.globalCompositeOperation = 'lighter'; g.fillStyle = S.spark;
+  const dot = (x, y, a) => { if (a > 0.01 && x >= 0 && y >= 0 && x < NW && y < NH) { g.globalAlpha = Math.min(1, a); g.fillRect(x, y, 1, 1); } };
+  for (let i = 0; i < S.sparks && tips.length; i++) {
+    const Lc = 22 + Math.floor(hash01(i, 500) * 30), kk = k + Math.floor(hash01(i, 501) * Lc), c = Math.floor(kk / Lc), v = kk % Lc, D = 14;
+    if (v >= D) continue;
+    const r = j => hash01(i * 131 + c, 502 + j), col = Math.floor(r(1) * S.glow.length);
+    let x, y;
+    if (r(0) < 0.5 && glowB(col, kk - v) > 0.4) { const m = S.glow[col].core, q = Math.floor(r(2) * m.length / 2) * 2; x = m[q]; y = m[q + 1]; }
+    else [x, y] = tips[Math.floor(r(3) * tips.length)];
+    const e = Math.sin(Math.PI * (v + 0.5) / D), n = Math.round(3 * e), a = 0.2 + 0.8 * e;
+    dot(x, y, a);
+    for (let d = 1; d <= n; d++) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) dot(x + dx * d, y + dy * d, a * (1 - d / (n + 1)));
+    if (n >= 2) for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) dot(x + dx, y + dy, a * 0.35);
+  }
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+}
+// 最終ステージ（B60F）の回路（2026-10-13、ユーザー了承）：①線（C.lines：[x,y,道のり,…]）に沿って、光の頭と5ドットの尾が走る。
+// 上からか下からかは回ごとに変わり、線ごとに休む時間がばらばらなので、あちこちで信号が行き交う ②柱の上面の菱形の紋（C.glyphs）が1つずつ5〜8秒で脈打つ。
+// どちらも加算。データは 動き_回路.py が書き出す
+function drawCircuit(g, C, k) {
+  g.globalCompositeOperation = 'lighter';
+  for (const [i, m] of glowSprites(C.glyphs, C.col, C.haloCol).entries()) {
+    const P = 50 + Math.floor(hash01(i, 600) * 30), b = (0.5 - 0.5 * Math.cos(2 * Math.PI * k / P + hash01(i, 601) * 6.28)) ** 1.3;
+    if (b < 0.02) continue;
+    g.globalAlpha = 0.5 * b; g.drawImage(m.halo, m.x, m.y); g.globalAlpha = 0.75 * b; g.drawImage(m.core, m.x, m.y);
+  }
+  g.fillStyle = C.col; const TAIL = 5;
+  for (const [i, ln] of C.lines.entries()) {
+    const maxd = ln[ln.length - 1], v = 0.6 + hash01(i, 610) * 0.4, D = Math.ceil((maxd + TAIL) / v);
+    const L = D + 30 + Math.floor(hash01(i, 611) * 120), kk = k + Math.floor(hash01(i, 612) * L), u = kk % L;
+    if (u >= D) continue;
+    const pos = u * v, down = hash01(i * 53 + Math.floor(kk / L), 613) < 0.6;
+    for (let j = 0; j < ln.length; j += 3) {
+      const t = pos - (down ? ln[j + 2] : maxd - ln[j + 2]);
+      if (t >= 0 && t < TAIL) { g.globalAlpha = 0.95 * (1 - t / TAIL) ** 1.2; g.fillRect(ln[j], ln[j + 1], 1, 1); }
+    }
+  }
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+}
+// 盤の手前に描くもの（3D の上の2Dの層）。キノコと蛍の森：横切る粒（近いので大きめの3×3のぼけ・半透明で、12〜20秒で横切る）。メカとバイオ：手前の埃
+function drawBgFore(now) {
+  const z = bgZone.z; if (!z) return;
+  const k = Math.floor(now / 100), F = z.flies;
+  if (z.dust) drawDust(ctx, z.dust, k, true);
+  if (!F?.fore) return;
+  if (F.big) ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < F.fore; i++) {
+    const c = crosser(i, k, [2.5, 4], [150, 500], 90); if (!c) continue;
+    const a = 0.35 * (0.4 + 0.6 * flyPulse(k, c.P, c.ph));
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) px1(ctx, c.x + dx, c.y + dy, F.glow, a * (dx && dy ? 0.3 : dx || dy ? 0.6 : 1));
+  }
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+}
 function tickBackground(now) {
   const z = bgZone.z; if (!z || !bgZone.img) return;
   if (z.sand) {
@@ -629,13 +851,19 @@ function tickBackground(now) {
     }
     bgTex.needsUpdate = true; return;
   }
-  if (!z.frames.length) return;
-  const f = Math.floor(now / z.ms) % z.frames.length;
-  if (f === bgZone.frame) return;
-  bgZone.frame = f;
+  const live = z.dust || z.shine || z.circuit || z.flies;
+  if (!z.frames.length && !live) return;
+  // 決まったコマ（滝・炎・歯車）と、その場で描く光・埃・蛍（キノコと蛍の森から最終ステージまで）を重ねる。どちらかが変わったときだけ描き直す
+  const f = z.frames.length ? Math.floor(now / z.ms) % z.frames.length : 0, k = live ? Math.floor(now / 100) : 0, key = f * 1e9 + k;
+  if (key === bgZone.frame) return;
+  bgZone.frame = key;
   bgCx.drawImage(bgZone.img, 0, 0);
-  const d = z.frames[f];
+  const d = z.frames[f] || [];
   for (let i = 0; i < d.length; i += 3) { bgCx.fillStyle = z.cols[d[i + 2]]; bgCx.fillRect(d[i], d[i + 1], 1, 1); }
+  if (z.shine) drawShine(bgCx, z.shine, k);
+  if (z.circuit) drawCircuit(bgCx, z.circuit, k);
+  if (z.flies) drawFlies(bgCx, z.flies, k);
+  if (z.dust) drawDust(bgCx, z.dust, k, false);
   bgTex.needsUpdate = true;
 }
 
@@ -649,6 +877,20 @@ for (const tx of [2.5, 5.5]) {
   L.position.set(tx, 0.85, 0.45); L.castShadow = true;
   L.shadow.mapSize.set(512, 512); L.shadow.camera.near = 0.05; L.shadow.camera.far = 12; L.shadow.bias = -0.004;
   scene.add(L); torches.push({ L, x: tx, base: 6, ph: Math.random() * 6 });
+}
+// 2（CardRogue）の魔法・技の光（2026-10-18 ユーザー指定）：雷・爆発・膜・しびれの弾などが、松明のように盤とキャラを照らす。
+// 光の数が変わると材質を作り直して一瞬止まるので、はじめから5つ置いておき（雷は線の上に並べて使う）、使わないときは明るさ0。明るさはなめらかに上げ下げ（点滅なし）
+const fxLights = Array.from({ length: 5 }, () => { const L = new THREE.PointLight('#ffffff', 0, 4, 1.4); L.position.set(0, -4, 0); scene.add(L); return { L, until: 0, t0: 0, ms: 1, fn: null }; });
+function fxLight(fn, ms) {   // fn(t) → { x, y：盤のドット（足もと）, h：高さ（マス）, color, power, dist } か null
+  const s = fxLights.find(l => clock >= l.until) || fxLights.reduce((a, b) => (a.until < b.until ? a : b));
+  Object.assign(s, { t0: clock, until: clock + ms, ms, fn });
+}
+function stepFxLights() {
+  for (const s of fxLights) {
+    const o = clock < s.until && s.fn ? s.fn(Math.min(1, (clock - s.t0) / s.ms)) : null;
+    if (!o) { s.L.intensity = 0; continue; }
+    const w = toWorld(o.x, o.y); s.L.position.set(w.x, o.h ?? 0.5, w.z); s.L.color.set(o.color); s.L.intensity = o.power; s.L.distance = o.dist ?? 4;
+  }
 }
 
 // ---------------------------------------------------------------- 3D：額縁（奥の壁・左右のふち・手前のふち）。ゾーンの色が替わったら作り直す
@@ -690,7 +932,7 @@ floorOver.rotation.x = -Math.PI / 2; floorOver.position.set(4, 0.004, 4); floorO
 function disposeTree(o) { o.traverse(m => { if (m.geometry) m.geometry.dispose(); const ms = Array.isArray(m.material) ? m.material : m.material ? [m.material] : []; ms.forEach(mm => { if (mm.map && !mm.map.shared) mm.map.dispose(); mm.dispose(); }); }); }
 function buildBackground() {
   const zone = bgPreview || zoneOfFloor(st.floor);
-  setBgZone(zone); applyBoardTheme(zone?.name);
+  setBgZone(zone); applyBoardTheme(zone?.name); setTorch(zone?.torch);
   for (const ch of [...board.children]) { board.remove(ch); disposeTree(ch); }
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), lambert(TILE.ready ? tileFloorTexture() : floorTexture()));
   floor.rotation.x = -Math.PI / 2; floor.position.set(4, 0, 4); floor.receiveShadow = true; board.add(floor);
@@ -782,6 +1024,16 @@ const embers = [];
     embers.push({ m, t0: -Math.random() * 3000, life: 1800 + Math.random() * 1800, x: 0, sx: 0 });
   }
 }
+// 松明の色（2026-10-13、ユーザー指定：31F 以降は青）。ゾーンの torch（bgzones.js）で炎の絵・光・火の粉の色を替える
+const TORCH = {
+  normal: { light: '#ffd9a0', ember: '#f0b84a', swap: null },
+  blue: { light: '#9fc8ff', ember: '#8fd0ff', swap: { Y: '#eef8ff', O: '#9fd4ff', o: '#4aa3e8', r: '#425c8d' } },
+};
+let torchKind = TORCH.normal;
+function setTorch(kind) {
+  const t = TORCH[kind] || TORCH.normal; if (t === torchKind) return;
+  torchKind = t; for (const x of torches) x.L.color.set(t.light); for (const e of embers) e.m.material.color.set(t.ember);
+}
 function setFlat(on) { flatMode = on; cliffs.visible = !on; }      // 1枚絵（2D）がふだん。B で3Dの立方体と切り替え
 
 // ---------------------------------------------------------------- 3D：紙のキャラ（足もとを軸に、カメラの傾きに合わせて後ろへ倒す）
@@ -817,8 +1069,14 @@ class Paper {
   }
   dispose() { scene.remove(this.pivot); this.mesh.geometry.dispose(); this.mat.dispose(); }
 }
-const PGROUP = SPR.groups.thief_hd ? 'thief_hd' : SPR.groups.thief ? 'thief' : 'player';   // 主人公：細かい絵（thief_hd、js/enemies_hd.js）があればそれ。まだ描いていないコマ（歩き・攻撃・被弾）は立ち姿になる
-const egroup = kind => SPR.groups[kind + '_hd'] ? kind + '_hd' : SPR.groups[kind + '_d'] ? kind + '_d' : kind;   // 大きく細かい絵（_hd）があればそれ
+const PGROUP_BASE = SPR.groups.thief_hd ? 'thief_hd' : SPR.groups.thief ? 'thief' : 'player';   // 主人公：細かい絵（thief_hd、js/enemies_hd.js）があればそれ。まだ描いていないコマ（歩き・攻撃・被弾）は立ち姿になる
+// 職業（2026-10-14、キャラメイクの職業えらび）：盤の主人公の絵を職業で替える。絵のない職業は盗賊のまま
+const JOB_GROUP = { 盗賊: 'thief_hd', 戦士: 'warrior_hd', 魔法使い: 'mage_hd' };
+let PGROUP = PGROUP_BASE;
+function setPlayerJob(job) { const g = JOB_GROUP[job]; PGROUP = g && SPR.groups[g] ? g : PGROUP_BASE; playerSwapCache = null; setJobIcon?.(g && SPR.groups[g] ? job : '盗賊'); }
+const GAME_KIND = { cardrogue: { golem: 'golem2' } };   // 2（CardRogue）だけ別の絵：ストーンゴーレムは1ではボスで2倍表示、2では普通の敵なので等倍の粒でオーガくらい（2026-10-18 ユーザー指定）
+const egroup = kind => { kind = GAME_KIND[GAME]?.[kind] && SPR.groups[GAME_KIND[GAME][kind] + '_hd'] ? GAME_KIND[GAME][kind] : kind;
+  return SPR.groups[kind + '_hd'] ? kind + '_hd' : SPR.groups[kind + '_d'] ? kind + '_d' : kind; };   // 大きく細かい絵（_hd）があればそれ
 const papers = new Map();      // 見た目の物（主人公・敵・品） → 紙
 function paperOf(ent, group) {
   let p = papers.get(ent);
@@ -891,10 +1149,214 @@ function addFx(group, frames, x, y, opt = {}) {
   const f = { group, frames, x, y, t0: clock, dir: opt.dir, flip: opt.flip, until: clock + frames.reduce((s, [, d]) => s + d, 0) };
   view.fx.push(f); return f;
 }
+// ---- 最後の一撃（最下層＝HK.LAST_FLOOR で、盤に残った最後の敵を倒す一撃。2026-10-14 ユーザー指定）
+// スローモーション（時計が FINALE_SLOW 倍で進む）＋効果音もゆっくり・エコー（js/music.js の Music.slow）＋当たった所の光と、まわりがゆっくり明るむ＋飛び散る粒。
+// 点滅はさせない：光は1回だけ、ゆっくりふくらんでゆっくり消える
+let slowmo = 0;
+const FINALE_SLOW = 0.22, GLOW_MS = 1100, SPARK_MS = 1300, FINALE_ALPHA = 0.55;   // FINALE_ALPHA：光の濃さ（透けて見える。ユーザー指定 2026-10-14）
+const glows = [], sparks = [];
+function finaleSlow(on) {
+  if (on) { slowmo = FINALE_SLOW; globalThis.Music?.slow?.(0.6); return; }
+  const t0 = performance.now(), from = slowmo || FINALE_SLOW;   // 実時間 0.5 秒で、ふつうの速さへ戻す
+  const step = () => { const t = Math.min(1, (performance.now() - t0) / 500); slowmo = t >= 1 ? 0 : from + (1 - from) * easeInOut(t); if (t < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step); globalThis.Music?.slow?.(null);
+}
+function finaleBurst(x, y, dir) {           // 盤のドット座標 (x, y) に、光と飛び散る粒（dir：攻撃の向き。粒は敵の側＝その向きへ噴き出す）
+  const R = rnd((x * 31 + y * 17 + st.turns) | 0), cols = ['#fbf3e2', '#fbf3e2', '#f0b84a', '#f0b84a', '#e1bc88', '#d24a3c'];
+  const rays = Array.from({ length: 14 }, (_, i) => ({ a: i / 14 * Math.PI * 2 + (R() - 0.5) * 0.35, len: 14 + R() * 22, w: R() < 0.3 ? 2 : 1 }));   // 光の筋（長さと太さはばらばら）
+  glows.push({ x, y, t0: clock, rays, tilt: R() * Math.PI / 4 });
+  const [ddx, ddy] = DIRV[dir] || [1, 0], base = Math.atan2(ddy, ddx);
+  for (let i = 0; i < 40; i++) {
+    const spread = (R() + R() - 1) * 1.1, a = base + spread, v = 40 + R() * 100 * (1 - Math.abs(spread) * 0.4);   // 向きのまわり±60度くらい（真ん中ほど多く・速く）
+    sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.75 - 20 - R() * 30, col: cols[Math.floor(R() * cols.length)], big: R() < 0.25, t0: clock, life: SPARK_MS * (0.6 + R() * 0.4) });
+  }
+}
+function drawFinale() {
+  const k = scaleNow();
+  for (let i = glows.length - 1; i >= 0; i--) if (clock - glows[i].t0 > GLOW_MS) glows.splice(i, 1);
+  for (let i = sparks.length - 1; i >= 0; i--) if (clock - sparks[i].t0 > sparks[i].life) sparks.splice(i, 1);
+  if (!glows.length && !sparks.length) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const g of glows) {
+    const t = (clock - g.t0) / GLOW_MS, a = FINALE_ALPHA * (t < 0.2 ? easeOut(t / 0.2) : 1 - easeInOut((t - 0.2) / 0.8));   // 1回だけ：すばやくふくらんで、ゆっくり消える（点滅なし）
+    ctx.fillStyle = `rgba(255,236,200,${(0.14 * a).toFixed(3)})`; ctx.fillRect(0, 0, NW, NH);            // まわりも少し明るむ
+    const [cx0, cy0] = S(g.x, g.y), cx = Math.round(cx0), cy = Math.round(cy0);
+    const dot = (x, y, n = 1) => ctx.fillRect(Math.round(x), Math.round(y), n, n);
+    const line = (ang, r0, r1, n) => { for (let r = r0; r <= r1; r++) dot(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r, n); };
+    // ① 光の筋：中心から外へ伸びて、根元から消えていく
+    const reach = easeOut(Math.min(1, t / 0.35));
+    for (const ry of g.rays) {
+      const r1 = ry.len * k * reach, r0 = r1 * Math.min(0.85, Math.max(0, (t - 0.15) / 0.6));
+      ctx.fillStyle = `rgba(251,243,226,${(0.8 * a).toFixed(3)})`; line(ry.a, Math.round(r0 + 3 * k), Math.round(r1), ry.w);
+    }
+    // ② 十字の閃き：縦横に長く、ななめに短い4本＋4本の光（少し傾ける）
+    const L = (10 + 18 * easeOut(Math.min(1, t / 0.25))) * k * (1 - 0.5 * Math.max(0, t - 0.4)), Ls = L * 0.45;
+    for (let i = 0; i < 4; i++) {
+      const ang = g.tilt + i * Math.PI / 2;
+      ctx.fillStyle = `rgba(240,184,74,${(0.55 * a).toFixed(3)})`; line(ang, 0, Math.round(L), 3);
+      ctx.fillStyle = `rgba(255,255,255,${(0.9 * a).toFixed(3)})`; line(ang, 0, Math.round(L * 0.8), 1);
+      ctx.fillStyle = `rgba(251,243,226,${(0.6 * a).toFixed(3)})`; line(ang + Math.PI / 4, 0, Math.round(Ls), 1);
+    }
+    // ③ 衝撃の輪：細い輪が外へ広がって薄くなる
+    const rr = Math.round((6 + 30 * easeOut(Math.min(1, t / 0.6))) * k), ra = a * (1 - Math.min(1, t / 0.7));
+    if (ra > 0.02) { ctx.fillStyle = `rgba(251,243,226,${(0.7 * ra).toFixed(3)})`; for (let i = 0, n = Math.max(24, rr * 6); i < n; i++) dot(cx + Math.cos(i / n * Math.PI * 2) * rr, cy + Math.sin(i / n * Math.PI * 2) * rr * 0.7); }
+    // ④ 芯：小さなひし形
+    const cr = Math.round((3 + 2 * (1 - t)) * k * a);
+    ctx.fillStyle = `rgba(255,255,255,${(0.95 * a).toFixed(3)})`;
+    for (let dy = -cr; dy <= cr; dy++) { const w = cr - Math.abs(dy); ctx.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
+  }
+  for (const p of sparks) {
+    const t = (clock - p.t0) / 1000, fade = 1 - (clock - p.t0) / p.life;
+    const [sx, sy] = S(p.x + p.vx * t, p.y + p.vy * t + 60 * t * t), n = Math.max(1, Math.round((p.big ? 2 : 1) * k));
+    ctx.globalAlpha = Math.min(1, fade * 1.6) * 0.85; ctx.fillStyle = p.col; ctx.fillRect(Math.round(sx), Math.round(sy), n, n);
+  }
+  ctx.restore();
+}
 function addNum(text, x, y, color = '#ffffff') { view.nums.push({ text: String(text), x, y, color, t0: clock }); }
 function addMark(group, frame, x, y, ms = 900, rise = 8) { view.marks.push({ group, frame, x, y, t0: clock, ms, rise }); }
 function shake(amp = 2, ms = 170) { view.shake = { amp, ms, t0: clock }; }
 function dust(x, y) { addFx('dust', [['0', 50], ['1', 60], ['2', 70]], x - 4, y - 4); }
+
+// ---------------------------------------------------------------- 落盤（2の B60F。2026-10-18 ユーザー指定の演出）
+// 階段を降りると主人公に寄り、画面ががたがた大きく揺れ、主人公の上に「！」の棘ふきだし。
+// 引いてから「落盤まで10ターン！ 出口へ急げ！」を画面の真ん中に大きく出し、そのあとは小さな揺れがずっと続く（view.quake）
+const ALERT_ROWS = [          // 「！」の棘ふきだし（20×16、左右対称。K 縁・W 中・R「！」）
+  '.........KK.........',
+  '..K.....KWWK.....K..',
+  '..KK....KWWK....KK..',
+  '..KWK..KWWWWK..KWK..',
+  '...KWKKWWRRWWKKWK...',
+  '...KWWWWWRRWWWWWK...',
+  'KKKKWWWWWRRWWWWWKKKK',
+  '.KWWWWWWWRRWWWWWWWK.',
+  '..KKWWWWWRRWWWWWKK..',
+  '...KWWWWWWWWWWWWK...',
+  '...KWWWWWRRWWWWWK...',
+  '..KWKKWWWRRWWWKKWK..',
+  '..KK..KWWWWWWK..KK..',
+  '..K....KWWWWK....K..',
+  '........KWWK........',
+  '.........KK.........',
+];
+function alertBubbleImg() {
+  if (alertBubbleImg.c) return alertBubbleImg.c;
+  return (alertBubbleImg.c = bake(ALERT_ROWS, { K: '#0b1120', W: '#fbf3e2', R: '#d24a3c' }));
+}
+async function collapseIntro() {
+  const p = view.player; if (!p) return;
+  const w = toWorld(p.px, p.py);
+  await camTo({ zoom: 1.9, elev: 38, fit: 0, persp: 0.3, dof: 0, cx: w.x, cz: w.z - 0.4 }, 260, easeOut);   // 主人公のアップ
+  if (!globalThis.Music?.se('collapse_enter')) sfx('rumble'); shake(8, 900);   // 60F に入った瞬間の地鳴り（効果音がなければ仮の合成音）
+  startCollapseLoop();                                                                              // がたがた！
+  for (let i = 0; i < 6; i++) { dust(OX + 12 + Math.floor(Math.random() * 168), OY + 8 + Math.floor(Math.random() * 168)); await wait(60); }
+  view.alertBubble = { t0: clock, ms: 1300 };
+  await wait(1000);
+  await camHome(320);
+  view.quake = st.floor; view.quakeTurn = st.turn; view.esc = { n: null, t0: 0, from: clock + 2600 };   // 知らせが消えるまで残りターンは出さない
+  say('落盤まで10ターン！ 出口へ急げ！', { size: 24, alarm: true, hold: 2200 });
+  await wait(300);
+}
+const bgQuake = { x: 0, y: 0 };
+// 落盤までの残りターン：2のルールでは st.escapeTurns。K の確認では、演出のあとに進んだターンを10から引く
+function escapeLeft() {
+  if (!st || st.gameStatus !== 'PLAYING') return null;
+  if (Number.isInteger(st.escapeTurns)) return st.escapeTurns;
+  if (view.quake && view.quake === st.floor && view.quakeTurn != null) return Math.max(0, 10 - (st.turn - view.quakeTurn));
+  return null;
+}
+// 残りターンを画面の真ん中に出す（ユーザー指定 2026-10-18）：ターンが進むたびに大きくバンっと出て（4倍→3倍）、2秒たつと半透明に落ち着く。
+// 文字はひとことと同じマルモニカ・黒縁取りを、盤の上の層に整数倍で描く。残り3以下は赤
+const escBmp = new Map();
+function escText(t, color) {          // 文字の絵（余白を切り落とす）
+  const key = t + color;
+  if (!escBmp.has(key)) {
+    const src = textBitmap(t, sayFont, color), d = src.getContext('2d').getImageData(0, 0, src.width, src.height).data;
+    let x0 = src.width, y0 = src.height, x1 = -1, y1 = -1;
+    for (let i = 3; i < d.length; i += 4) if (d[i]) { const p = i >> 2, x = p % src.width, y = (p / src.width) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    const c = canvas(x1 - x0 + 1, y1 - y0 + 1); c.getContext('2d').drawImage(src, -x0, -y0); escBmp.set(key, c);
+  }
+  return escBmp.get(key);
+}
+function drawEscape() {
+  const n = escapeLeft(); if (n === null || view.quake !== st.floor) return;   // 落盤の導入（collapseIntro）が済むまで出さない
+  const e = view.esc || (view.esc = { n: null, t0: 0, from: 0 });
+  if (clock < e.from) return;
+  if (n !== e.n) { const first = e.n === null; e.n = n; e.t0 = first ? clock - 2600 : clock; }   // 最初の10はバンっとさせずに半透明で置く
+  const t = clock - e.t0, big = escText(String(n), n <= 3 ? '#d24a3c' : '#f0b84a'), pre = escText('落盤まで', '#fbf3e2'), post = escText('ターン', '#fbf3e2');
+  const k = t < 90 ? 4 : 3, a = t < 2000 ? 1 : t < 2600 ? 1 - 0.65 * (t - 2000) / 600 : 0.35, gap = 5;
+  const bw = big.width * 3, bh = big.height * 3, W = pre.width + gap + bw + gap + post.width;
+  const x0 = Math.round(NW / 2 - W / 2), cy = Math.round(NH / 2), nx = x0 + pre.width + gap, ny = cy - Math.round(bh / 2);
+  const ly = cy - Math.round(pre.height / 2);            // 小さな文字は数字の高さの真ん中にそろえる
+  ctx.globalAlpha = a;
+  ctx.drawImage(pre, x0, ly);
+  ctx.drawImage(big, nx - Math.round((k - 3) * big.width / 2), ny - Math.round((k - 3) * big.height / 2), big.width * k, big.height * k);   // バンっ：はじめの90ms だけ4倍
+  ctx.drawImage(post, nx + bw + gap, ly);
+  ctx.globalAlpha = 1;
+}
+// K の確認用：残りが0になって出口にいなければ、本家（CardRogue.html の関数 z）と同じく落盤でゲームオーバーにする。
+// 2のルール（st.escapeTurns があるとき）ではルールの側が決めるので何もしない。?dev のときだけ
+function devCollapseRule() {
+  if (!DEV || Number.isInteger(st.escapeTurns) || st.gameStatus !== 'PLAYING' || escapeLeft() !== 0) return;
+  if (st.exit && st.player.x === st.exit.x && st.player.y === st.exit.y) return;
+  st.player.hp = 0; st.gameStatus = 'GAME_OVER'; st.deathReason = '落盤';
+  const msg = '10ターン以内に脱出できず、落盤に巻き込まれた。'; st.log.push(msg); flowLog([msg]);
+}
+// 落盤（ゲームオーバー）：いちばん大きな揺れと地鳴り、盤じゅうに土ぼこりが降る。そのあとふだんどおり倒れて、ゲームオーバーの画面へ
+async function collapseDeath() {
+  view.quake = 0;
+  stopCollapseLoop(); if (!globalThis.Music?.se('collapse_big')) sfx('rumble'); shake(10, 1500);   // 崩落でゲームオーバー
+  const p = view.player;
+  for (let i = 0; i < 16; i++) {
+    dust(OX + Math.floor(Math.random() * 192), OY + Math.floor(Math.random() * 192));
+    if (p && i % 3 === 0) dust(p.px + Math.round((Math.random() - 0.5) * 20), p.py - 6);
+    await wait(70);
+  }
+  await wait(200);
+}
+// 確認用（J キー、?dev）：CardRogue で B59F の「ボスを倒したあと」にする（58階から次の階を作ってボスを消す）。階段を降りれば B60F の落盤へ
+function devToFloor59() {
+  if (GAME !== 'cardrogue') { say('CardRogue（60階層）で遊んでいるときだけ'); return; }
+  st.floor = 58; HK.nextFloor(st);
+  st.enemies = []; st.kills.pitLord = (st.kills.pitLord || 0) + 1;
+  buildBackground(); syncView(true); renderUI(); globalThis.Music?.floor(st.floor);
+  view.banner = { text: `B${st.floor}F`, t0: clock, ms: 1400 };
+  say('確認用：B59F（ボスを倒したあと）。階段へ');
+}
+// 60F のあいだずっと鳴る地鳴り（collapse_loop、曲の下に薄く）。60F を出る・遊びが終わる・タイトルへ戻ると 0.4秒で消す（draw の見張り）
+let collapseLoop = null;
+function startCollapseLoop() { if (!collapseLoop) collapseLoop = globalThis.Music?.seLoop('collapse_loop') || null; }
+function stopCollapseLoop() { if (collapseLoop) { collapseLoop.stop(0.4); collapseLoop = null; } }
+// 確認用（Shift＋J、?dev）：CardRogue の B59F をボスありで始める。ボスの曲の切り替え（3割で激しい所・倒して終幕）を試すため、
+// 倒せる装備（鉤槍・戦棍・大槌・重鎧・巨大な楯・霊薬）と HP 60 にする（2026-10-19 ユーザーの確認用。ルールは触らない）
+const DEV_BOSS_DECK = ['hookSpear', 'hookSpear', 'warClub', 'warClub', 'earthHammer', 'heavyArmor', 'heavyArmor', 'giantShield', 'power8', 'guard20', 'heal20', 'heal20'];
+function devBoss59() {
+  if (GAME !== 'cardrogue') { say('CardRogue（60階層）で遊んでいるときだけ'); return; }
+  st.floor = 58; HK.nextFloor(st);
+  st.player.maxHp = st.player.hp = 60;
+  const deck = DEV_BOSS_DECK.map(cardId => ({ id: st.nextCardId++, cardId }));
+  for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+  st.hand = deck.slice(0, 5); st.drawPile = deck.slice(5); st.discardPile = []; if (Array.isArray(st.waitingPile)) st.waitingPile = [];
+  buildBackground(); syncView(true); renderUI(); globalThis.Music?.floor(st.floor);
+  view.banner = { text: `B${st.floor}F`, t0: clock, ms: 1400 };
+  say('確認用：B59F ボス戦（装備つき・HP60）');
+}
+// 確認用（H、?dev）：CardRogue の追加の階の頭（31・40・50・59F）へ順に飛ぶ。曲と背景の確かめ用。聴いているあいだ倒れないよう HP 99（2026-10-19）
+// 60F は 59F の階段から降りる（落盤の演出と一緒に鳴る。ボスがいると階段は封印。J でボスを消せる）
+const DEV_BANDS = [31, 40, 50, 59];
+function devNextBand() {
+  if (GAME !== 'cardrogue') { say('CardRogue（60階層）で遊んでいるときだけ'); return; }
+  const to = DEV_BANDS.find(f => f > st.floor) ?? DEV_BANDS[0];
+  st.floor = to - 1; HK.nextFloor(st);
+  st.player.maxHp = st.player.hp = 99;
+  buildBackground(); syncView(true); renderUI(); globalThis.Music?.floor(st.floor);
+  view.banner = { text: `B${st.floor}F`, t0: clock, ms: 1400 };
+  say(`確認用：B${st.floor}F（曲の確かめ）`);
+}
+async function previewCollapse() {   // K キー（?dev）：今の階で落盤の演出を見る（2のルールに載せ替える前の確かめ用）。小さな揺れは階を移るまで続く
+  busy = true; cancelAll();
+  await collapseIntro();
+  busy = false;
+}
 
 // ---------------------------------------------------------------- 移動の補間
 function tween(ent, tx, ty, ms, ease = t => t) {
@@ -927,8 +1389,8 @@ function setPlayerHair(cols) {     // cols：[明, 中, 暗] か、HAIR_PRESETS 
   const c = typeof cols === 'string' ? HAIR_PRESETS[cols] : cols;
   playerHair = c ? { '#8a5a38': c[0], '#5c422c': c[1], '#3f2d21': c[2] } : null; playerSwapCache = null;
 }
-function hairSwap(cols) {   // 髪の色（HAIR_PRESETS の名前か [明, 中, 暗]）→ 主人公の絵の記号の置き換え（OP の広場の6人やキャラメイクでも使う）
-  const c = typeof cols === 'string' ? HAIR_PRESETS[cols] : cols, roles = SPR.groups[PGROUP]?.roles?.hair;
+function hairSwap(cols, group = PGROUP) {   // 髪の色（HAIR_PRESETS の名前か [明, 中, 暗]）→ 主人公の絵（group）の記号の置き換え（OP の広場の6人やキャラメイク、職業えらびでも使う）
+  const c = typeof cols === 'string' ? HAIR_PRESETS[cols] : cols, roles = SPR.groups[group]?.roles?.hair;
   if (!c || !roles) return null;
   const to = { '#8a5a38': c[0], '#5c422c': c[1], '#3f2d21': c[2] }, sw = {};
   for (const [ch, base] of Object.entries(roles)) if (to[base]) sw[ch] = to[base];
@@ -942,7 +1404,7 @@ function playerSwap() {
 }
 function playerLook(p) {
   if (p.dir === 'a') p.flip = true; else if (p.dir === 'd') p.flip = false;
-  if (PGROUP.startsWith('thief')) return { prefix: p.dir === 'w' ? 'bk_' : 'fr_', flip: !!p.flip };
+  if (PGROUP.startsWith('thief') || PGROUP.endsWith('_hd')) return { prefix: p.dir === 'w' ? 'bk_' : 'fr_', flip: !!p.flip };   // 斜め前・斜め後ろの絵（盗賊・戦士・魔法使い）
   return { prefix: p.dir === 'w' ? 'up_' : p.dir === 's' ? 'down_' : 'side_', flip: p.dir === 'a' };
 }
 // 画面に写したときの拡大率（寄ると数字や効果も大きくなる）
@@ -958,6 +1420,14 @@ function draw(now) {
   if (view.shake) {
     const t = (clock - view.shake.t0) / view.shake.ms;
     if (t >= 1) view.shake = null; else { const a = view.shake.amp * (1 - t); camS.sx = Math.round(Math.sin(clock * 0.09) * a); camS.sy = Math.round(Math.cos(clock * 0.13) * a * 0.5); }
+  }
+  if (collapseLoop && !(st?.gameStatus === 'PLAYING' && (st.floor === 60 || view.quake === st.floor))) stopCollapseLoop();
+  // 落盤の階：演出のあとは背景の1枚絵だけが細かく震える（盤とカメラは動かさない。ユーザー指定 2026-10-18）。
+  // 50ms ごとに半ドット（背景の1ドット＝画面の2ドットなので、画面の1ドット）ずつ位置が替わり、ときどき止む
+  bgQuake.x = bgQuake.y = 0;
+  if (view.quake && view.quake === st?.floor && st.gameStatus === 'PLAYING') {
+    const n = Math.floor(clock / 50), r = hash01(n, 900);
+    if (n % 40 < 34) { bgQuake.x = r < 0.33 ? -0.5 : r < 0.66 ? 0.5 : 0; bgQuake.y = hash01(n, 901) < 0.35 ? 0.5 : 0; }
   }
   updateCamera();
   // 紙の傾き：ふだん（床をドットにそろえる・45度）は垂直、本当の傾きではカメラの方へ倒す
@@ -982,8 +1452,8 @@ function draw(now) {
     pp.put(v.px, v.py, (v.lift || 0) + hop); pp.setAlpha(v.alpha);
   }
   for (const it of view.items) {
-    const pp = paperOf(it, 'icon'), fx = footX(it.x), fy = footY(it.y);
-    pp.frame(SPR.cardIcon[it.cardId] || 'scroll', false);
+    const [ig, ifr] = iconRef(it.cardId), pp = paperOf(it, ig), fx = footX(it.x), fy = footY(it.y);
+    pp.frame(ifr, false);
     // 敵と同じマスにいるときは、品を敵の手前に出して不透明度40％（敵も品も見えるように。2026-10-09 テストプレイ）
     const under = [...view.enemies.values()].some(v => !v.gone && Math.abs(v.px - fx) < T / 2 && Math.abs(v.py - fy) < T / 2);
     pp.put(fx, under ? fy + 3 : fy - 1, it.lift || 0); pp.setAlpha(under ? Math.min(it.alpha, 0.4) : it.alpha);
@@ -993,8 +1463,9 @@ function draw(now) {
   // 盤の上の印（自分のカードの届くマス・指しているマス）
   drawFloorOver();
   // 松明（明滅させず、炎の形だけがゆらぎ、光はゆっくり揺れる）
-  for (const [i, fm] of flameMats.entries()) { const f = sprTex('torch', String(Math.floor(now / 130 + i * 2) % 4)); if (fm.map !== f) { fm.map = f; fm.needsUpdate = true; } }
+  for (const [i, fm] of flameMats.entries()) { const f = sprTex('torch', String(Math.floor(now / 130 + i * 2) % 4), false, torchKind.swap); if (fm.map !== f) { fm.map = f; fm.needsUpdate = true; } }
   for (const t of torches) t.L.intensity = t.base * (1 + 0.05 * Math.sin(now / 1700 + t.ph));
+  stepFxLights();
   if (!flatMode) { if (Math.floor(now / 220) !== paintWater.last) { paintWater.last = Math.floor(now / 220); paintWater(now); } for (const t of fallTexes) t.offset.y = Math.floor(now / 70) / 24; }
   for (const e of embers) {
     let t = now - e.t0;
@@ -1009,7 +1480,7 @@ function draw(now) {
   if (flatMode && bgFlatMesh) {
     tickBackground(now);
     const z = camS.zoom, sx = (CAM0.cx - camS.cx) * PX * z, sy = (camS.cz - CAM0.cz) * PX * z;
-    bgFlatMesh.scale.set(z, z, 1); bgFlatMesh.position.set(NW / 2 + sx + camS.sx, NH / 2 + sy - camS.sy, 0);
+    bgFlatMesh.scale.set(z, z, 1); bgFlatMesh.position.set(NW / 2 + sx + camS.sx + bgQuake.x, NH / 2 + sy - camS.sy - bgQuake.y, 0);
     renderer.render(bgScene, bgCam); renderer.clearDepth();
   }
   renderer.render(scene, cam);
@@ -1026,6 +1497,7 @@ function draw(now) {
 
   // ---- ここから2Dの層
   ctx.clearRect(0, 0, NW, NH);
+  drawBgFore(now);
   const k = scaleNow();
   // 効果（斬撃・突き・火花・煙・土ぼこり・矢）
   view.fx = view.fx.filter(f => clock < f.until);
@@ -1037,6 +1509,8 @@ function draw(now) {
     const [cx, cy] = S(pos[0] + img.width / 2, pos[1] + img.height / 2);
     blit(img, cx, cy, k);
   }
+  drawFinale();
+  CR.drawFx();                          // 2（CardRogue）の魔法・技の演出（js/cardrogue.js）
   // しるし（盾・毒・回復など）
   view.marks = view.marks.filter(m => clock - m.t0 < m.ms);
   for (const m of view.marks) {
@@ -1045,6 +1519,12 @@ function draw(now) {
     const [cx, cy] = S(m.x, m.y - img.height / 2 - easeOut(Math.min(1, t * 2)) * m.rise);
     blit(img, cx, cy, k);
     ctx.globalAlpha = 1;
+  }
+  // 落盤の「！」の棘ふきだし（主人公の頭の上。出た瞬間に2ドット跳ねる）
+  if (view.alertBubble) {
+    const b = view.alertBubble, t = clock - b.t0, p = view.player;
+    if (t > b.ms || !p) view.alertBubble = null;
+    else { const [cx, cy] = S(p.px, p.py - 38 - (t < 70 ? 2 : t < 140 ? 1 : 0)); blit(alertBubbleImg(), cx, cy, k); }
   }
   // 敵の体力（頭の右上に数字ひとつ）と状態
   for (const v of view.enemies.values()) {
@@ -1063,6 +1543,7 @@ function draw(now) {
     drawDigits(n.text, Math.round(x), Math.round(y), n.color, true);
     ctx.globalAlpha = 1;
   }
+  drawEscape();
   // 階の切り替えの暗転（ゆっくり）
   if (view.fade > 0) { ctx.fillStyle = `rgba(11,17,32,${view.fade})`; ctx.fillRect(0, 0, NW, NH); }
   if (view.banner) drawBanner();
@@ -1100,6 +1581,7 @@ function drawFloorOver() {
 }
 function drawTargeting(g) {
   const tg = targeting, p = st.player;
+  if (CR.drawTargeting(g, tg)) return;                      // 2：飛行の道
   const opts = targetOptions(tg), tx = x => (x - 1) * T, ty = y => (y - 1) * T;
   for (const d of Object.keys(opts)) {
     const o = opts[d];
@@ -1123,6 +1605,7 @@ function drawTargeting(g) {
       g.drawImage(img, tx(p.x) + 12 + dx * 17 - 4, ty(p.y) + 12 + dy * 17 - 4);
     }
   }
+  CR.drawAfter(g, tg);                                     // 2：直線の敵すべてに枠
 }
 // 歩ける範囲（2026-10-09 テストプレイ）：何も選んでいない手番のあいだ、手札の移動のカード（歩く・走る…）で行けるマスを薄い水色に。
 // 押すとそのマスへ（2マス先から）。行けるカードのうち、移動の数がそのマスにいちばん近いカードを自動で使う（moveChoices・pickMove。カードを選ぶ窓は前の版の名残）。
@@ -1132,7 +1615,7 @@ function moveRange() {
   if (!st || st.gameStatus !== 'PLAYING' || busy || targeting || selected || dialogOpen()) return out;
   const p = st.player;
   for (const cobj of st.hand) {
-    const md = HK.cardOf(cobj).moveDistance; if (!md) continue;
+    const cc = HK.cardOf(cobj), md = cc.type === '移動' && cc.moveDistance; if (!md) continue;
     for (const d of Object.keys(DIRV)) {
       const [dx, dy] = DIRV[d];
       for (let n = 1; n <= md; n++) {
@@ -1237,7 +1720,8 @@ async function playerAttack(dir, impact, focus = null, swing = 'swing') {   // s
   playerIdle(p);
 }
 // 確認用（U キー）：いちばん近い敵へ、大アップの攻撃をその場で再生する。見せるだけで、ルールの状態（体力・ターン）は変えない
-async function previewBigCloseup() {
+let previewDirAt = 0;
+async function previewBigCloseup(finale = false, want = null) {   // finale：最後の一撃（スローモーション・光・粒）で見せる（F キー。押すたびに右→下→左→上の向きで）。want：寄せる向き
   if (busy || !st || st.gameStatus !== 'PLAYING') return;
   const p = view.player, list = [...view.enemies.values()].filter(v => !v.gone && !v.dying);
   if (!list.length) { say('近くに敵がいない'); return; }
@@ -1245,20 +1729,25 @@ async function previewBigCloseup() {
   // 実際の攻撃と同じ見え方になるよう、敵の絵だけを一時的に主人公の隣（空いている床）へ寄せる。終わったら元に戻す
   const home = { px: v.px, py: v.py, x: v.x, y: v.y };
   const free = (x, y) => st.map[y]?.[x] === '.' && !st.enemies.some(e => e.x === x && e.y === y);
-  const side = [['d', 1, 0], ['a', -1, 0], ['s', 0, 1], ['w', 0, -1]].find(([, sx, sy]) => (v.x === p.x + sx && v.y === p.y + sy) || free(p.x + sx, p.y + sy));
+  const sides = [['d', 1, 0], ['a', -1, 0], ['s', 0, 1], ['w', 0, -1]], okSide = ([, sx, sy]) => (v.x === p.x + sx && v.y === p.y + sy) || free(p.x + sx, p.y + sy);
+  const side = (want && sides.filter(x => x[0] === want).find(okSide)) || sides.find(okSide);
+  if (want && side && side[0] !== want) say(`その向きは空いていないので ${side[0]} の向きで`);
   if (!side) { say('まわりに空きがない'); return; }
   const d = side[0];
   v.x = p.x + side[1]; v.y = p.y + side[2]; v.px = footX(v.x); v.py = footY(v.y); faceEnemy(v);
   busy = true; cancelAll();
+  if (finale) finaleSlow(true);
   await playerAttack(d, async () => {
     const img = sprDir('slash', '0', d);
     addFx('slash', [['0', 40], ['1', 60], ['2', 80]], v.px - img.width / 2, v.py - 12 - img.height / 2, { dir: d });
-    hitstop(80); shake(3, 200);
+    hitstop(finale ? 0 : 80); shake(3, 200);
+    if (finale) finaleBurst(v.px, v.py - 12, d);
     v.anim = newEntityAnim([['hurt_0', 260], ['idle_0', 10]]);
     addFx('spark', [['0', 40], ['1', 60], ['2', 70]], v.px - 5, v.py - 14); sfx('hit');
     await wait(260);
     v.anim = EIDLE();
   }, { v, strong: true, melee: true, waited: true });
+  if (finale) finaleSlow(false);
   await wait(380);
   Object.assign(v, home); faceEnemy(v);
   busy = false;
@@ -1301,16 +1790,18 @@ async function enemyDie(v) {
 async function enemyMove(v, to, d) {
   const k = KIND[v.kind];
   if (d === 'a') v.facing = -1; else if (d === 'd') v.facing = 1; else v.back = d === 'w';
-  if (SPR.groups[egroup(v.kind)].k) {
+  if (SPR.groups[egroup(v.kind)].animSet === 'float') {
+    // 足のない敵（レイス）：足踏みも弾みも足音もなく、呼吸を続けたまま滑る
+  } else if (SPR.groups[egroup(v.kind)].k) {
     // 大きな絵：1マスに1歩。片足をはっきり上げて下ろし（左右は1歩ごとに交互）、体も少し弾む
     v.stepN = (v.stepN || 0) + 1;
     v.anim = newEntityAnim([['move_' + (v.stepN % 2), k.moveMs * 0.7], ['idle_0', k.moveMs * 0.3]]);
     v.hop = { t0: clock, ms: k.moveMs };
   } else v.anim = newEntityAnim(k.move.map(([f, ms]) => [f, ms * k.moveMs / k.move.reduce((s, [, m]) => s + m, 0)]));
-  sfx('estep');
+  if (SPR.groups[egroup(v.kind)].animSet !== 'float') sfx('estep');
   const done = tween(v, footX(to.x), footY(to.y), k.moveMs, t => t);
   v.x = to.x; v.y = to.y;
-  done.then(() => { v.anim = EIDLE(); faceEnemy(v); });
+  done.then(() => { if (SPR.groups[egroup(v.kind)].animSet !== 'float') v.anim = EIDLE(); faceEnemy(v); });
   return done;
 }
 // 隣の敵がいっせいに飛びかかる。当たりは1回にまとめ、ダメージと防いだ分は合算。ダメージを受けるときは控えめに寄る
@@ -1355,6 +1846,15 @@ async function animatePlayerPhase(s0, mid, action, card, pred, release) {
   const c = card ? HK.cardOf(card) : null;
   const p = view.player;
   const moved = s0.player.x !== mid.player.x || s0.player.y !== mid.player.y;
+  if (moved && st.version === 2 && c && action.mode !== 'forced' && (c.magicEffect || c.warriorEffect)) {   // 2：瞬間移動・飛行・突進魔法・突破の構え・回避障壁（js/cardrogue.js の playMove）
+    if (!CR.enemiesChanged(s0, mid)) release();           // 突進魔法：当たってから敵が動く（移動の release は perform のあとで）
+    if (await CR.playMove(c, s0, mid, action)) {
+      const got = s0.items.find(i => i.x === mid.player.x && i.y === mid.player.y && !mid.items.some(j => j.x === i.x && j.y === i.y));
+      if (got) await pickup(got);
+      dispBlock = mid.player.temporaryBlock; renderStatus();
+      return;
+    }
+  }
   if (moved) {
     const [dx, dy] = DIRV[action.direction], path = [];
     let x = s0.player.x, y = s0.player.y;
@@ -1368,17 +1868,19 @@ async function animatePlayerPhase(s0, mid, action, card, pred, release) {
     return;
   }
   if (!c || action.mode === 'forced') return;
-  // 攻撃
-  if (c.damage) {
+  // 攻撃（2の範囲の武器＝蛮人斧・地裂きの大槌は、下の「敵の変化」でまとめて見せる）
+  if (c.damage && !c.warriorEffect) {
     const hitE = s0.enemies.find(e => { const m = mid.enemies.find(n => n.id === e.id); return !m || m.hp !== e.hp || m.x !== e.x || m.y !== e.y; });
     const d = action.direction;
     // カメラの寄り方：強く寄るのは「与えたダメージが武器の攻撃力の2倍以上、かつ4以上」か「難易度の帯でいちばん強い敵を倒した」ときだけ
     // （4以上は 2026-10-09 テストプレイ：攻撃力1の毒針などが、残火・連撃の＋1だけで2倍になって寄っていた）
     const mE = hitE && mid.enemies.find(n => n.id === hitE.id), vF = hitE && findView(hitE.id);
     const dealt = hitE ? hitE.hp - (mE ? mE.hp : 0) : 0;
-    const strong = !!hitE && ((c.damage > 0 && dealt >= c.damage * 2 && dealt >= 4) || (!mE && hitE.attack >= tierMaxAtk(s0.floor)));
+    const finale = !!hitE && !mE && (st.version === 2 ? hitE.type === 'pitLord' : s0.floor >= HK.LAST_FLOOR && mid.enemies.length === 0);   // 最下層の最後の敵を倒す一撃（2は B60F に敵がいないので、B59F のロードオブザピット）
+    const strong = !!hitE && (finale || (c.damage > 0 && dealt >= c.damage * 2 && dealt >= 4) || (!mE && hitE.attack >= tierMaxAtk(s0.floor)));
     const focus = vF ? { v: vF, strong, melee: !(c.range > 1) } : null;
-    await playerAttack(d, async () => {
+    if (finale) finaleSlow(true);
+    try { await playerAttack(d, async () => {
       if (!hitE) { release(); return; }
       const v = findView(hitE.id); if (!v) { release(); return; }
       const dist = Math.abs(hitE.x - s0.player.x) + Math.abs(hitE.y - s0.player.y);
@@ -1397,7 +1899,8 @@ async function animatePlayerPhase(s0, mid, action, card, pred, release) {
         const img = sprDir('slash', '0', d);
         addFx('slash', [['0', 40], ['1', 60], ['2', 80]], v.px - img.width / 2, v.py - 12 - img.height / 2, { dir: d });
       }
-      hitstop(focus && focus.strong ? 80 : 25);
+      hitstop(finale ? 0 : focus && focus.strong ? 80 : 25);
+      if (finale) finaleBurst(v.px, v.py - 12, d);
       const m = mid.enemies.find(n => n.id === hitE.id);
       const lost = hitE.hp - (m ? m.hp : 0);
       const first = Math.min(lost, pred);
@@ -1414,14 +1917,19 @@ async function animatePlayerPhase(s0, mid, action, card, pred, release) {
         if (focus) focus.back();
         enemyDie(v); await wait(40);
       }
-    }, focus, weaponSwing(c));
+    }, focus, weaponSwing(c)); } finally { if (finale) finaleSlow(false); }   // 途中で止まってもスローモーションを残さない
+    if (st.version === 2) await CR.afterWeapon(c, s0, mid);   // 魔法杖：魔力をためた
     return;
   }
-  // 攻撃以外の効果（敵は同時に動く）
-  release();
-  if (c.block) { addMark('shield', '0', p.px, p.py - 22, 800, 8); if (!globalThis.Music) sfx('block');   // 防具の音はカードの行き先の演出（盾＝ガキン、鎧＝着る音）で鳴らす
+  // 攻撃以外の効果（敵は同時に動く。2で敵に当たる魔法・技は、当たりを見せ終わってから敵が動く＝ルールの順番どおり。2026-10-18 爆炎の範囲の敵が先に逃げて見えた）
+  if (!(st.version === 2 && CR.enemiesChanged(s0, mid))) release();
+  if (st.version === 2) {                                   // 2の魔法・技・範囲の武器：カードごとの演出（js/cardrogue.js の playEffect）。ないものは敵の変化だけ
+    if (await CR.playEffect(c, card, s0, mid, action)) { dispBlock = mid.player.temporaryBlock; renderStatus(); return; }
+    if (CR.enemiesChanged(s0, mid)) await CR.animateEnemyChanges(s0, mid, action.direction);
+  }
+  if (c.block || (st.version === 2 && mid.player.temporaryBlock > s0.player.temporaryBlock)) { addMark('shield', '0', p.px, p.py - 22, 800, 8); if (!globalThis.Music) sfx('block');   // 防具の音はカードの行き先の演出（盾＝ガキン、鎧＝着る音）で鳴らす
     dispBlock = mid.player.temporaryBlock; renderStatus(); await wait(260); return; }
-  if (c.heal) {
+  if (c.heal || (st.version === 2 && mid.player.hp > s0.player.hp)) {
     const gain = mid.player.hp - s0.player.hp;
     addMark('heal', '1', p.px, p.py - 22, 800, 10); addNum('+' + gain, p.px, p.py - 34, '#a8f08f'); sfx('heal');
     dispHp = mid.player.hp; renderStatus(); await wait(320); return;
@@ -1437,11 +1945,15 @@ async function pickup(it) {
   view.items = view.items.filter(i => i !== vi);
   // 拾った道具の絵を、主人公の頭の上に出す
   const p = view.player;
-  addMark('icon', SPR.cardIcon[it.cardId] || 'scroll', p.px, p.py - 27, 1000, 6);
+  addMark(...iconRef(it.cardId), p.px, p.py - 27, 1000, 6);
   await wait(120);
   say(`${HK.cards[it.cardId].name}を拾った`);
 }
-async function animateEnemyPhase(trace, mid) {
+async function animateEnemyPhase(trace, mid, withMoves = false) {   // withMoves：2回目からの敵の手番（ヘビーのカード）。移動もここで見せる
+  if (trace && !trace.bad && withMoves) {
+    const byId = new Map(); for (const ev of trace.events) if (ev.t === 'move') (byId.get(ev.id) || byId.set(ev.id, []).get(ev.id)).push(ev);
+    await Promise.all([...byId.values()].map(async evs => { const v = findView(evs[0].id); if (v) for (const ev of evs) await enemyMove(v, ev.to, ev.d); }));
+  }
   if (!trace || trace.bad) {           // 台本がずれたときは位置だけ合わせる
     for (const e of st.enemies) { const v = findView(e.id); if (v && (v.x !== e.x || v.y !== e.y)) { tween(v, footX(e.x), footY(e.y), 160); v.x = e.x; v.y = e.y; } }
     await wait(170); return;
@@ -1456,12 +1968,14 @@ async function animateEnemyPhase(trace, mid) {
       if (attacked) continue;
       attacked = true;
       await enemiesAttack(trace.events.filter(e => e.t === 'attack').map(e => ({ v: findView(e.id), ev: e })).filter(a => a.v));
+      if (trace.events.some(e => e.t === 'attack' && e.kept) && view.player) await CR.blockKept(view.player);   // 2：鉄骨防御・城塞の鎧・魔法の盾で防御が残った
     }
     else if (ev.t === 'stuck') { addMark('stuck', '0', v.px, v.py - 6, 500, 3); v.stuck = false; await wait(120); }
   }
   void mid;
 }
 async function animateDescend() {
+  if (st.gameStatus === 'CLEARED' && st.floor === 60) return animateEscape();   // 2の B60F の出口：降りる演出ではなく脱出の演出
   const p = view.player;
   if (!globalThis.Music?.se('stairs')) sfx('stairs');   // 石段を降りる足音（採用の効果音。読み込み前は仮の合成音）
   const t0 = clock;
@@ -1474,6 +1988,20 @@ async function animateDescend() {
   while (clock - t1 < 420) { view.fade = 0.95 * (1 - (clock - t1) / 420); await wait(16); }
   view.fade = 0;
   dust(view.player.px, view.player.py);
+  if (st.floor === 60) await collapseIntro();   // 2の最終階：落盤の演出（ルールの載せ替え後に効く。K キーで確かめられる）
+}
+
+// 2の B60F で出口に着いたとき（ルールは踏破にするだけで次の階を作らない。2026-10-19 ユーザー指定）：揺れと残りターンを止め、
+// 主人公が沈みながらゆっくり暗転し、真ん中に大きく「くずれゆく迷宮から脱出した！」。暗いままエンディングへ（ending.js が暗いところから明ける）
+async function animateEscape() {
+  const p = view.player; view.quake = 0;
+  stopCollapseLoop(); globalThis.Music?.se('collapse_big');   // 脱出したとき
+  if (!globalThis.Music?.se('stairs')) sfx('stairs');
+  const t0 = clock;
+  while (clock - t0 < 700) { const t = (clock - t0) / 700; p.sink = Math.round(t * 10); p.alpha = 1 - t; view.fade = t; await wait(16); }
+  view.fade = 1;
+  say('くずれゆく迷宮から脱出した！', { size: 24, alarm: true, hold: 1800 });
+  await wait(2600);
 }
 
 // ---------------------------------------------------------------- できごとの文字（盤の左の余白に、枠なしで流れて消える）
@@ -1524,37 +2052,51 @@ async function perform(kind, payload) {
   const pred = kind === 'play' && card && HK.cardOf(card).damage ? HK.damageOf(st, card).total : 0;
   const log0 = st.log.slice();
   let mid = null, trace = null, descended = false, res;
+  const v2 = st.version === 2, traceOf = v2 ? HKTrace.traceEnemyTurn2 : HKTrace.traceEnemyTurn, matchOf = v2 ? HKTrace.matches2 : HKTrace.matches, extra = [];   // extra：2回目からの敵の手番
   if (kind === 'play') {
     res = HK.play(st, payload,
-      e => { mid = snap(e); trace = HKTrace.traceEnemyTurn(e); HK.enemyTurn(e); if (!HKTrace.matches(trace, e)) { trace.bad = true; console.warn('台本と元ロジックの結果がずれました'); } },
-      e => { mid = snap(e); descended = true; if (globalThis.Tutorial?.active) Tutorial.descend(e); else HK.nextFloor(e); });
+      e => { const t = traceOf(e); if (!mid) mid = snap(e); HK.enemyTurn(e); if (!matchOf(t, e)) { t.bad = true; console.warn('台本と元ロジックの結果がずれました'); } if (!trace) trace = t; else extra.push(t); },
+      e => { mid = snap(e); if (globalThis.Tutorial?.active) { Tutorial.descend(e); descended = true; return; } const f0 = e.floor; HK.nextFloor(e); descended = e.floor !== f0 || e.gameStatus !== 'PLAYING'; });   // 2の B59F はボスを倒すまで降りない
   } else {
-    trace = HKTrace.traceEnemyTurn(st);
-    res = HK.discard(st, payload);
-    if (res.ok && !HKTrace.matches(trace, st)) trace.bad = true;
+    trace = traceOf(st);
+    res = kind === 'wait' ? HK.wait(st) : HK.discard(st, payload);
+    if (res.ok && !matchOf(trace, st)) trace.bad = true;
     mid = { ...s0, hand: st.hand.map(c => ({ ...c })) };
   }
   if (!res.ok) { busy = false; speed = baseSpeed; say(res.message); renderUI(); return; }
+  // 2の 59F（ボス）：処理が確定したこの瞬間に曲の切り替えを予約する（アニメーションの終わりは待たない。音楽ジャンルの指定）
+  // 倒したら終幕。ボスの HP が最大の3割以下になったら「激しい所」（c59last、ユーザー指定 2026-10-19）。一度入ったら回復しても戻さない（Music.boss は先へしか進まない）。
+  // 1回で3割より上から倒したときは、激しい所を通らず終幕へ
+  if (GAME === 'cardrogue' && s0.floor === 59 && st.floor === 59) {
+    const boss = st.enemies.find(e => e.type === 'pitLord');
+    if (s0.enemies.length > 0 && st.enemies.length === 0) globalThis.Music?.boss('finale');
+    else if (boss && boss.hp <= boss.maxHp * 0.3) globalThis.Music?.boss('last');
+  }
   if (!mid) mid = snap(st);
+  rareCheck(mid); rareCheck(st);                   // レアスキンの敵を倒したか（階を降りる前の盤と、手番のあとの盤）
   // できごとの文字：主人公の分は動き出しと同時、敵の分は敵の手番の再生と同時に流す
   const logMid = kind === 'play' ? mid.log : log0;
   flowLog(logDiff(log0, logMid));
   const enemyLog = logDiff(logMid, st.log);
   animateHand(s0, card ? card.id : null, kind === 'play' ? payload.mode : 'discard', kind === 'play' && payload.mode === 'effect' ? effectGains(s0, mid, card) : []);
+  if (s0.waitN && (st.waitingPile?.length ?? 0) < s0.waitN) setTimeout(() => CR.flyCards('#wait-pile', '#disc', s0.waitN), 320);   // 2の盗賊：ターンが進んで、一時待機が捨て札へ
   // 敵の移動は主人公の動きと同時に始める（台本がずれたときは後でまとめて合わせる）
   const moveEvents = trace && !trace.bad && !descended ? trace.events.filter(e => e.t === 'move') : [];
   let movesDone = null;
-  const release = (holdOf = () => 0) => movesDone || (movesDone = Promise.all(moveEvents.map(async ev => {
-    const v = findView(ev.id); if (!v) return;
-    const h = holdOf(ev); if (h > 0) await wait(h);
-    await enemyMove(v, ev.to, ev.d);
+  const moveById = new Map(); for (const ev of moveEvents) (moveById.get(ev.id) || moveById.set(ev.id, []).get(ev.id)).push(ev);   // 2のロードオブザピットは2マス進む（同じ敵の移動は順に）
+  const release = (holdOf = () => 0) => movesDone || (movesDone = Promise.all([...moveById.values()].map(async evs => {
+    const v = findView(evs[0].id); if (!v) return;
+    const h = holdOf(evs[0]); if (h > 0) await wait(h);
+    for (const ev of evs) await enemyMove(v, ev.to, ev.d);
   })));
-  if (kind === 'play') await animatePlayerPhase(s0, mid, payload, card, pred, release);
-  else { release(); sfx('card_discard'); await wait(140); }
+  if (kind === 'play') { try { await animatePlayerPhase(s0, mid, payload, card, pred, release); } catch (e) { console.error('主人公の演出で止まった（ルールは進んでいる）', e); syncView(); } }   // 演出が失敗しても手番を止めない
+  else { release(); if (kind !== 'wait') sfx('card_discard'); await wait(140); }
   await release();
   flowLog(enemyLog);
   if (descended) await animateDescend();
-  else if (st.gameStatus !== 'RETURNED' && trace) await animateEnemyPhase(trace, mid);
+  else if (st.gameStatus !== 'RETURNED' && trace) { await animateEnemyPhase(trace, mid); for (const t of extra) await animateEnemyPhase(t, mid, true); }
+  if (!descended) devCollapseRule();
+  if (st.gameStatus === 'GAME_OVER' && st.deathReason === '落盤') await collapseDeath();
   if (st.gameStatus === 'GAME_OVER') await playerDown();
   syncView(); renderStatus();
   if (!handMatches()) renderHand();                // 手札の動きは animateHand が済ませている。ずれたときだけ描き直す
@@ -1574,6 +2116,7 @@ async function playerDown() {
 
 // ---------------------------------------------------------------- 向き選び
 function targetOptions(tg) {
+  const alt = CR.targetOptions(tg); if (alt) return alt;    // 2：壁・敵を越える移動、爆炎の着弾、飛行の道（js/cardrogue.js）
   const p = st.player, out = {};
   for (const d of Object.keys(DIRV)) {
     const [dx, dy] = DIRV[d], tiles = [];
@@ -1591,34 +2134,44 @@ function targetOptions(tg) {
   return out;
 }
 function startTargeting(cardObj, mode) {
-  const c = HK.cardOf(cardObj);
-  const kind = mode === 'forced' || c.moveDistance ? 'move' : 'attack';
-  targeting = { cardId: cardObj.id, mode, kind, max: mode === 'forced' ? 1 : (c.moveDistance ?? 1), range: c.range ?? 1, dir: null, dist: 0 };
+  const c = HK.cardOf(cardObj), sp = CR.targetSpec(c, mode) || { kind: 'attack', range: c.range ?? 1 };   // 形は js/cardrogue.js の crTargetSpec（1のカードは今までどおり）
+  targeting = { cardId: cardObj.id, mode, kind: sp.kind, max: sp.max ?? 1, range: sp.range ?? 1, overWalls: !!sp.overWalls, overEnemies: !!sp.overEnemies, path: sp.kind === 'path' ? [] : null, square: !!sp.square, line: !!sp.line, charge: !!sp.charge, area: sp.area, tint: sp.tint, dir: sp.kind === 'area' ? 'area' : null, dist: 0 };
+  if (sp.kind === 'path') say('行きたいマスを押すと道ができる。もう一度押すと飛ぶ');   // 飛行（2026-10-18 隣の1マスしか出ず分かりにくかった）
 }
+const targetPayload = (tg, more) => ({ ...(tg.extra || {}), cardId: tg.cardId, mode: tg.mode, ...more });   // extra：宝投げで投げるカードなど
 function targetKey(d) {
-  const tg = targeting, o = targetOptions(tg)[d];
+  const tg = targeting;
+  if (tg.kind === 'path') return CR.pathKey(tg, d);
+  if (tg.kind === 'area') { say('もう一度押すか Enter で使う'); return; }
+  const o = targetOptions(tg)[d];
   if (tg.kind === 'attack') {
     if (!o.target) { say('そっちには届く敵がいない'); bumpFace(d); return; }
-    perform('play', { cardId: tg.cardId, mode: tg.mode, direction: d, distance: 1 });
+    perform('play', targetPayload(tg, { direction: d, distance: 1 }));
     return;
   }
-  if (!o.tiles.length) { say('そっちには進めない'); bumpFace(d); return; }
-  if (tg.max === 1) { perform('play', { cardId: tg.cardId, mode: tg.mode, direction: d, distance: 1 }); return; }
-  if (tg.dir === d) tg.dist = tg.dist > 1 ? tg.dist - 1 : o.tiles.length;
-  else { tg.dir = d; tg.dist = o.tiles.length; }
+  if (!o.tiles.length) { say(tg.kind === 'blast' ? 'そっちには撃てない' : 'そっちには進めない'); bumpFace(d); return; }
+  if (tg.max === 1) { perform('play', targetPayload(tg, { direction: d, distance: 1 })); return; }
+  const ns = o.tiles.map(t => t.n);                      // 選べる距離（壁を越える瞬間移動では飛び飛び）。同じ向きをもう一度押すと1つ手前へ
+  if (tg.dir === d) { const i = ns.indexOf(tg.dist); tg.dist = i > 0 ? ns[i - 1] : ns[ns.length - 1]; }
+  else { tg.dir = d; tg.dist = ns[ns.length - 1]; }
 }
 function targetConfirm() {
   const tg = targeting; if (!tg || !tg.dir) return;
-  perform('play', { cardId: tg.cardId, mode: tg.mode, direction: tg.dir, distance: tg.dist });
+  if (tg.kind === 'path') return CR.pathConfirm(tg);
+  if (tg.kind === 'area') return perform('play', targetPayload(tg, {}));
+  perform('play', targetPayload(tg, { direction: tg.dir, distance: tg.dist }));
 }
 function targetClick(x, y) {
-  const tg = targeting, opts = targetOptions(tg);
+  const tg = targeting;
+  if (tg.kind === 'path') return CR.pathClick(tg, x, y);
+  if (tg.kind === 'area') { if (!CR.areaHas(tg, x, y)) return false; perform('play', targetPayload(tg, {})); return true; }   // 範囲のマス（か主人公）を押す＝使う
+  const opts = targetOptions(tg);
   for (const d of Object.keys(opts)) {
     const o = opts[d];
-    if (tg.kind === 'attack' && o.target && o.target.x === x && o.target.y === y) { perform('play', { cardId: tg.cardId, mode: tg.mode, direction: d, distance: 1 }); return true; }
+    if (tg.kind === 'attack' && o.target && o.target.x === x && o.target.y === y) { perform('play', targetPayload(tg, { direction: d, distance: 1 })); return true; }
     const hit = o.tiles.find(c => c.x === x && c.y === y);
     if (hit) {
-      if (tg.kind === 'move') perform('play', { cardId: tg.cardId, mode: tg.mode, direction: d, distance: hit.n });
+      if (tg.kind === 'move' || tg.kind === 'blast') perform('play', targetPayload(tg, { direction: d, distance: hit.n }));
       else targetKey(d);
       return true;
     }
@@ -1711,11 +2264,11 @@ function pixFrame({ r, s, fill, line, hi, lo, rings, hole = false, drop = 0, dro
   set('mv-h', pixFrame({ r: 2, s: 3, fill: '#4aa3e8cc', rings: ['#221b17', ['#fbf3e2', '#7582a9']], drop: 1, dropCol: '#221b17' }));
 }
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const KIND_CLASS = { 移動: 'move', 攻撃: 'atk', 防御: 'def', 食料: 'food', ポーション: 'potion', 財宝: 'treasure', 消耗品: 'scroll', 護符: 'charm', 探索: 'misc' };
-const CARD_W = 42, CARD_GAP = 4, CARD_REST = 224;   // 手札は盤の手前に半分しまって持つ（絵がまるごと見える高さ）
-const directional = c => !!(c.damage || c.moveDistance);
+const KIND_CLASS = { 移動: 'move', 攻撃: 'atk', 防御: 'def', 食料: 'food', ポーション: 'potion', 財宝: 'treasure', 消耗品: 'scroll', 護符: 'charm', 探索: 'misc', 魔法: 'magic', 技: 'skill' };
+const CARD_W = 42, CARD_GAP = 4, CARD_REST = 220;   // CARD_REST：手札のふだんの高さ（2026-10-18：224→216→ユーザー指定で少し下げて220）   // 手札は盤の手前に半分しまって持つ（絵がまるごと見える高さ）
+const directional = c => { const sp = CR.targetSpec(c, 'effect'); return !!sp && sp.kind !== 'area'; };   // 向き・距離を選ぶカード（1は攻撃と移動。2の形は js/cardrogue.js）
 function iconCanvas(cardId) {
-  const s = spr('icon', SPR.cardIcon[cardId] || 'scroll'), c = canvas(s.width, s.height); c.getContext('2d').drawImage(s, 0, 0); c.className = 'icon'; return c;
+  const s = spr(...iconRef(cardId)), c = canvas(s.width, s.height); c.getContext('2d').drawImage(s, 0, 0); c.className = 'icon'; return c;
 }
 // 値（攻撃・防御・移動・回復）はカードの下に点で並べる。7以上や得点は数字
 function cardNumber(cobj) {
@@ -1725,6 +2278,7 @@ function cardNumber(cobj) {
 // 手札の上の色帯：効果と、いまの数値（強化・合成・強撃こみ）。数値のないカードは効果の名前（2026-10-09 テストプレイ）
 const SCROLL_WORD = { preferWeapons: '武器選好', fuseWeapons: '武器合体', deleteCard: '削除', preferArmor: '防具選好', fuseArmor: '防具合体', preferScrolls: '巻物選好' };
 function cardEffect(cobj) {
+  if (st?.version === 2) { const t = CR.cardEffect(cobj); if (t) return t; }
   const c = HK.cardOf(cobj);
   if (c.damage) return `攻撃${HK.damageOf(st, cobj).total}`;
   if (c.block) return `防御${c.block}`;
@@ -1769,9 +2323,9 @@ function lockImage(open) {
   rows.forEach((r, y) => [...r].forEach((ch, x) => { if (P[ch]) { g.fillStyle = P[ch]; g.fillRect(x, y, 1, 1); } }));
   return c.toDataURL();
 }
-function toggleLock(id) {
+function toggleLock(id, tip = true) {   // tip：説明の窓を出し直す（手札の錠前から押したときは出さない）
   if (lockedCards.has(id)) lockedCards.delete(id); else lockedCards.add(id);
-  globalThis.Music?.se('ui_cursor'); renderHand(); showCardTip(id); saveRun();
+  globalThis.Music?.se('ui_cursor'); renderHand(); if (tip) showCardTip(id); saveRun();
 }
 function pipsHtml(n) { return n <= 0 ? '' : n <= 6 ? '<i></i>'.repeat(n) : `<b>${n}</b>`; }
 function cardValue(cobj) {
@@ -1781,8 +2335,12 @@ function cardValue(cobj) {
 // 手札はトランプを手で持つように扇形に広げる：手もとの下の1点（半径 FAN_R）を中心にした弧の上に、1枚 FAN_STEP 度ずつ傾けて並べる
 // 端のカードが弧のぶん下がりすぎると絵が隠れるので、下がる量は FAN_DROP 倍に抑える（傾きはそのまま）
 const FAN_R = 410, FAN_STEP = 5.5, FAN_DROP = 1, FAN_MAX = 30;    // 傾きをゆるめたぶん半径を大きくして、カードの間隔は前と同じに保つ
+const HAND_FAN = false;   // 2026-10-18 ユーザー指定：扇形をやめて、まっすぐ横に並べる（true で扇形にもどる）
+const HAND_STEP = CARD_W + 2;   // 横に並べるときの間隔（カードの幅＋2）
 function cardPos(i, n) {
-  const mid = (n - 1) / 2, rot = (i - mid) * Math.min(FAN_STEP, n > 1 ? FAN_MAX / (n - 1) : 0), a = rot * Math.PI / 180;
+  const mid = (n - 1) / 2;
+  if (!HAND_FAN) return { x: Math.round(240 + (i - mid) * HAND_STEP - CARD_W / 2), y: CARD_REST, rot: 0 };
+  const rot = (i - mid) * Math.min(FAN_STEP, n > 1 ? FAN_MAX / (n - 1) : 0), a = rot * Math.PI / 180;
   return { x: Math.round(240 + FAN_R * Math.sin(a) - CARD_W / 2), y: Math.round(CARD_REST + FAN_R * (1 - Math.cos(a)) * FAN_DROP), rot };
 }
 function renderHand(hand = st.hand, leaving = null) {
@@ -1796,8 +2354,10 @@ function renderHand(hand = st.hand, leaving = null) {
     b.dataset.rot = pos.rot;
     b.title = `${c.name}（${cardValue(cobj)}）`;
     // 色帯＝効果といまの数値／絵＝合成の段（＋2 など）／絵の下＝カードの名前（＋は付けない）。ロックしたカードは色帯の右に鍵
-    b.innerHTML = `<span class="band"><b class="eff mm s">${esc(cardEffect(cobj))}</b>${lk ? '<i class="lock"></i>' : ''}</span>`
-      + `<span class="art"></span><span class="nm mm s">${esc(HK.cards[cobj.cardId].name)}</span><span class="key">${i + 1}</span>`;
+    b.innerHTML = `<span class="band"><b class="eff mm s">${esc(cardEffect(cobj))}</b></span>`
+      + `<span class="art"></span><span class="nm mm s">${esc(HK.cards[cobj.cardId].name)}</span><span class="key">${i + 1}</span>`
+      + `<span class="lk${lk ? ' on' : ''}" title="${lk ? 'ロックを外す' : 'ロックする（十字キーの自動移動で使わない）'}"><i></i></span>`;   // 錠前（押すとロックの切り替え。2026-10-18 ユーザー指定で、説明の窓だけでなく手札にも）
+    b.querySelector('.lk').onclick = ev => { ev.stopPropagation(); startAudio(); toggleLock(cobj.id, false); };
     b.querySelector('.art').prepend(iconCanvas(cobj.cardId));
     if (rank) b.querySelector('.art').appendChild(plusImage(rank));
     b.onclick = () => { startAudio(); selectCard(cobj.id); };
@@ -1818,6 +2378,9 @@ function renderPiles() {
   if (top) face.appendChild(iconCanvas(top.cardId));
   $('#disc').classList.toggle('empty', !top);
   $('#rem-n').textContent = st.removedCards.length;
+  const wp = $('#wait-pile'), wb = $('#wait-btn');      // 古い 3D版.html が残っていても止まらないように（? で）
+  if (wp) { wp.hidden = !Array.isArray(st.waitingPile); if (st.waitingPile) $('#wait-n').textContent = st.waitingPile.length; }   // 2の盗賊：一時待機
+  if (wb) wb.hidden = st.version !== 2;
   $('#rem').classList.toggle('empty', !st.removedCards.length);
 }
 function renderStatus() {
@@ -1833,7 +2396,7 @@ function renderStatus() {
   $('#block-row').classList.toggle('on', dispBlock > 0);
   const fx = [p.temporaryAttack && `強撃＋${p.temporaryAttack}`, p.ember && `残火 ${p.ember}/3`, p.reflect && '反射待機', p.combo && `連撃＋${p.combo}`,
     p.lastMoveDistance && `突撃＋${Math.min(3, p.lastMoveDistance)}`, p.lastBlocked && `返し刃＋${p.lastBlocked}`,
-    st.preferWeaponsNextFloor && '次の階：武器', st.preferArmorNextFloor && '次の階：防具', st.preferScrollsNextFloor && '次の階：巻物'].filter(Boolean);
+    st.preferWeaponsNextFloor && '次の階：武器', st.preferArmorNextFloor && '次の階：防具', st.preferScrollsNextFloor && '次の階：巻物', ...(st.version === 2 ? CR.statusEffects() : [])].filter(Boolean);
   $('#effects').innerHTML = fx.map(t => `<span>${esc(t)}</span>`).join('');
 }
 function renderUI() { renderStatus(); renderHand(); }
@@ -1842,7 +2405,7 @@ function renderUI() { renderStatus(); renderHand(); }
 // 食べ物＝かじられて消える／薬＝飲み干されて消える／防具＝主人公に重なって着る（そのあと捨て札へ）／巻物＝広がって燃え尽きる／
 // 削除で消したカード＝燃えて灰になる。カードはゲームの解像度（1ドット＝1u）の小さな絵として描き直し、そのドットを直接けずる・燃やす。
 // どの演出も「経過時間 → 見た目」で決まる（render(t)）。速さを変えるときは各 dur を変える
-const KIND_COLOR = { move: '#5c7236', atk: '#8f2f2b', def: '#425c8d', food: '#cca673', potion: '#d24a3c', treasure: '#f0b84a', scroll: '#6e655a', charm: '#ae6f47', misc: '#506573' };
+const KIND_COLOR = { move: '#5c7236', atk: '#8f2f2b', def: '#425c8d', food: '#cca673', potion: '#d24a3c', treasure: '#f0b84a', scroll: '#6e655a', charm: '#ae6f47', misc: '#506573', magic: '#647091', skill: '#6e655a' };
 function cardFate(cobj, mode, removedNow) {
   const t = HK.cardOf(cobj).type;
   if (mode === 'effect') {
@@ -1856,9 +2419,9 @@ function cardFate(cobj, mode, removedNow) {
 function cardBitmap(cobj) {
   const W = CARD_W, H = 60, c = canvas(W, H), x = c.getContext('2d', { willReadFrequently: true }), f = (col, a, b, w, h) => { x.fillStyle = col; x.fillRect(a, b, w, h); };
   f('#221b17', 0, 0, W, H); f('#f2dcb4', 1, 1, W - 2, H - 2); f('#fbf3e2', 1, 1, W - 2, 1); f('#fbf3e2', 1, 1, 1, H - 2);
-  f(KIND_COLOR[KIND_CLASS[HK.cardOf(cobj).type] || 'misc'], 1, 1, W - 2, 8); f('#221b17', 1, 9, W - 2, 1);
-  x.imageSmoothingEnabled = false; x.drawImage(spr('icon', SPR.cardIcon[cobj.cardId] || 'scroll'), 3, 10, 36, 36);
-  const n = Math.min(6, cardNumber(cobj)); for (let i = 0; i < n; i++) f('#3f2d21', 21 - n * 2 + i * 4, 48, 3, 3);
+  f(KIND_COLOR[KIND_CLASS[HK.cardOf(cobj).type] || 'misc'], 1, 1, W - 2, 6); f('#221b17', 1, 7, W - 2, 1);   // 色帯は手札と同じ細さ（2026-10-18）
+  x.imageSmoothingEnabled = false; x.drawImage(spr(...iconRef(cobj.cardId)), 3, 8, 36, 36);
+  const n = Math.min(6, cardNumber(cobj)); for (let i = 0; i < n; i++) f('#3f2d21', 21 - n * 2 + i * 4, 46, 3, 3);
   return c;
 }
 const cardFxList = [], cardParts = [];
@@ -2101,7 +2664,8 @@ function animateHand(s0, usedId = null, usedMode = null, gains = []) {
       return;
     }
     if (!gone.discardSe) { gone.discardSe = true; sfx('card_discard'); }   // 捨て札へ飛ぶ音（何枚でも1回）
-    const dx = discR.x + discR.w / 2 - (r.x + r.w / 2), dy = discR.y + discR.h / 2 - (r.y + r.h / 2), k = discR.w / r.w;
+    const wp = st.waitingPile?.some(w => w.id === c.id) && $('#wait-pile') && !$('#wait-pile').hidden, toR = wp ? stageRect($('#wait-pile .stack i:last-of-type')) : discR;   // 2の盗賊のライト：一時待機の山へ
+    const dx = toR.x + toR.w / 2 - (r.x + r.w / 2), dy = toR.y + toR.h / 2 - (r.y + r.h / 2), k = toR.w / r.w;
     g.animate([
       { transform: `translate(0px, 0px) rotate(${r.rot}deg) scale(1)` },
       { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 34 * u}px) rotate(${r.rot + (c.id === usedId ? 10 : 6)}deg) scale(${(1 + k) / 2})`, offset: 0.45 },
@@ -2374,12 +2938,12 @@ function glyphOf(ch, f) {
   }
   return glyphCache.get(key);
 }
-function buildSay(text, f) {
+function buildSay(text, f, size = SAY_SIZE) {
   const m = canvas(1, 1).getContext('2d'); m.font = `${f.px}px "${f.family}"`;
   const chars = [...text], glyphs = chars.map((ch, i) => ({ img: glyphOf(ch, f), x: Math.round(m.measureText(chars.slice(0, i).join('')).width) }));
   const whole = { width: Math.ceil(m.measureText(text).width) + 4, height: Math.ceil(f.px * 1.25) + 4 };
   const u = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) || 2;
-  const k = Math.max(1, Math.round(SAY_SIZE * u / f.px - 0.01)), pad = 5;
+  const k = Math.max(1, Math.round(size * u / f.px - 0.01)), pad = 5;
   const top = Math.min(...glyphs.map(g => g.img.top)), bottom = Math.max(...glyphs.map(g => g.img.bottom));
   const reflH = Math.ceil((bottom - top + 1) / 2) + 6;                     // 反射した影は半分の高さ（＋跳ねるぶん）
   const H = whole.height + pad * 2 + reflH;
@@ -2425,18 +2989,20 @@ function drawSay(now) {
   sx.filter = `blur(${(a.k * 1.3).toFixed(1)}px)`; sx.drawImage(a.sbuf, 0, 0, sel.width, sel.height); sx.filter = 'none';
   if (!moving) a.done = true;
 }
-function say(t) {
+// opt.size：文字の高さ（u。ふだんは SAY_SIZE）、opt.alarm：画面の真ん中に出す（落盤の知らせ）、opt.hold：出しておく時間（ms）
+function say(t, opt = {}) {
   if (!t) return;
   sayText = t;
+  for (const el of [$('#say'), $('#say-shadow')]) el.classList.toggle('alarm', !!opt.alarm);
   const f = sayFont, el = $('#say');
   const font = `${f.px}px "${f.family}"`;
-  if (document.fonts.check(font, t)) sayAnim = buildSay(t, f);
+  if (document.fonts.check(font, t)) sayAnim = buildSay(t, f, opt.size);
   else {                                     // 書体がまだ読み込まれていなければ、読み込めてから作る（それまでの仮の絵は覚えない）
     sayAnim = null;
-    document.fonts.load(font, t).catch(() => {}).then(() => { if (sayText === t) { glyphCache.clear(); sayAlign.clear(); sayAnim = buildSay(t, f); } });
+    document.fonts.load(font, t).catch(() => {}).then(() => { if (sayText === t) { glyphCache.clear(); sayAlign.clear(); sayAnim = buildSay(t, f, opt.size); } });
   }
   el.classList.add('show'); $('#say-shadow').classList.add('show');
-  sayUntil = performance.now() + 1300 + [...t].length * SAY_STEP;
+  sayUntil = performance.now() + (opt.hold ?? 1300) + [...t].length * SAY_STEP;
 }
 function placeBubble(now) {
   drawSay(now);
@@ -2475,18 +3041,20 @@ function selectCard(id) {
   if (busy || st.gameStatus !== 'PLAYING') return;
   const cobj = st.hand.find(c => c.id === id); if (!cobj) return;
   const c = HK.cardOf(cobj);
-  if (selected === id && targeting && targeting.cardId === id && c.damage) return cancelAll();   // 武器をもう一度押す＝やめる
+  const aimNow = (directional(c) && (c.damage || (st.version === 2 && CR.aimOnSelect(c)))) || (st.version === 2 && CR.targetSpec(c, 'effect')?.kind === 'area');   // area：蛮人斧・毒・取寄・宝罠（向きなしの範囲。2026-10-18 範囲が出なかった）   // 選んだ時点で届く範囲を出すカード（武器と、2の魔法・技。2026-10-18 魔法の矢が2回押さないと出なかった）
+  if (selected === id && targeting && targeting.cardId === id && aimNow) return targeting.kind === 'area' ? targetConfirm() : cancelAll();   // もう一度押す＝やめる（向きのない範囲は＝使う）
   if (selected === id && !targeting) {                     // もう一度押す＝使う
     if (c.type !== '財宝') return useCard(cobj);
     return cancelAll();
   }
   closeDialog();
   selected = id; targeting = null; sfx('card');
-  if (c.damage) startTargeting(cobj, 'effect');            // 武器は選んだ時点で届く範囲を出す。光ったマスの敵をクリックすればそのまま攻撃
+  if (aimNow) startTargeting(cobj, 'effect');   // 武器は選んだ時点で届く範囲を出す。光ったマスの敵をクリックすればそのまま攻撃（2の蛮人斧は向きなし）
   renderHand(); showCardTip(id);
 }
 function useCard(cobj) {
   const c = HK.cardOf(cobj), base = { cardId: cobj.id, mode: 'effect' };
+  if (st.version === 2 && CR.useCard(cobj, base)) return;   // 2：先に何かを選ぶカード（js/cardrogue.js）
   if (c.returnToSurface) return showDialog('地上へ帰る？', `<p>ここで探索を終えて、${HK.score(st).total}点を持ち帰ります。</p>`, [['帰る', () => perform('play', base), 'primary'], ['やめる', cancelAll]]);
   if (c.scrollEffect === 'deleteCard') {
     const list = st.hand.filter(h => h.id !== cobj.id).map(h => [HK.cardOf(h).name, () => perform('play', { ...base, targetCardId: h.id })]);
@@ -2516,10 +3084,12 @@ function enemyIcon(type) {
 function endingData(s) {
   const kills = Object.entries(s.kills).map(([type, count]) => { const info = HK.enemyInfo(type); return { type, name: info.name, count, value: info.score, icon: enemyIcon(type) }; });
   const ids = Object.fromEntries(Object.entries(HK.cards).filter(([, c]) => c.type === '財宝').map(([id, c]) => [c.name, id]));
-  const treasure = HK.score(s).treasure.map(t => ({ ...t, icon: spr('icon', SPR.cardIcon[ids[t.name]] || 'gem') }));
+  const treasure = HK.score(s).treasure.map(t => ({ ...t, icon: spr(...iconRef(ids[t.name], 'gem')) }));
   const total = kills.reduce((n, k) => n + k.count * k.value, 0) + treasure.reduce((n, t) => n + t.count * t.value, 0);
   const g = SPR.groups[PGROUP], hero = spr(PGROUP, g.k ? 'bk_idle_0' : 'idle_0', false, playerSwap());
-  return { status: s.gameStatus, floor: s.floor, turns: s.turn, ms: performance.now() - runStart, kills, treasure, total, hero,
+  // 背景の1枚絵：2で B60F を踏破したら空を見上げる絵（final）。全職クリア（grandslam）は s.grandSlam（showResult が Otakara.recordClear で決める。確認用は Shift＋E）
+  const bg = s.grandSlam ? 'grandslam' : GAME === 'cardrogue' && s.gameStatus === 'CLEARED' && s.floor >= 60 ? 'final' : null;
+  return { status: s.gameStatus, floor: s.floor, turns: s.turn, ms: performance.now() - runStart, kills, treasure, total, hero, game: GAME, bg, grandSlam: !!s.grandSlam, job: globalThis.HK_PLAYER?.look?.job || '盗賊',
            playerIcon: headIcon(spr(PGROUP, g.k ? 'fr_idle_0' : 'idle_0', false, playerSwap()), 30).toDataURL(), face: faceUrl() };
 }
 // そのとき使っていた顔グラ（左下の顔、待機の最初のコマ・96×96）。ランキングの左に出す
@@ -2531,23 +3101,40 @@ function faceUrl() {
   } catch { return ''; }
 }
 function playEnding(data) {
-  globalThis.Music?.jingle('ending');   // エンディングの曲（集計の効果音は ending.js が Music.se で鳴らす）
+  // エンディングの曲（集計の効果音は ending.js が Music.se で鳴らす）。2の B60F 脱出＝ending_escape、グランドスラム＝ending_gs（どちらもループしない。鳴り終わったら無音）
+  globalThis.Music?.jingle(data.bg === 'final' ? 'ending_escape' : data.bg === 'grandslam' ? 'ending_gs' : 'ending');
   closeDialog(); hideCardTip();
   globalThis.Ending.play(data, { done() { newGame(); if (globalThis.Opening) Opening.show(); else $('#title').classList.add('open'); } });
 }
 function showResult() {
+  view.quake = 0;                                  // 落盤の階の揺れと残りターンの表示を止める
+  if (view.fade >= 1) setTimeout(() => { view.fade = 0; }, 1500);   // 脱出の暗転：エンディング（暗いところから明ける）が上に出てから戻す
   clearSave();                                     // ゲームオーバー・帰還・踏破で、つづきからの保存は消す
+  // 宿屋（猫の育成、js/inn.js。2026-10-20）：ダンディ・キャットを倒したことがあれば、この戻りで宿屋を開く。そろって出撃していたら猫が育つ。
+  // 帰還・踏破のスコアは、おこづかい（累計ハイスコア）へ（1と2どちらも。ランキングの点は減らさない）
+  const Inn = globalThis.Inn;
+  if (Inn) {
+    rareCheck(st); if (rareGone().cat) Inn.unlock();
+    Inn.returned();
+    if (st.gameStatus !== 'GAME_OVER') Inn.earn(HK.score(st).total);
+  }
   if (!(st.gameStatus !== 'GAME_OVER' && globalThis.Ending)) globalThis.Music?.jingle(st.gameStatus === 'GAME_OVER' ? 'gameover' : 'return');   // ゲームオーバー／帰還（エンディングの曲は playEnding で）
-  if (st.gameStatus !== 'GAME_OVER' && globalThis.Ending) return playEnding(endingData(st));
+  // 2の踏破は職業ごとに残し、全部の職業がそろった最初の1回がグランドスラム（エンディングの絵とトレンチコート。js/otakara.js の recordClear。2026-10-20）
+  const grandSlam = GAME === 'cardrogue' && st.gameStatus === 'CLEARED' && !!globalThis.Otakara?.recordClear(GAME, globalThis.HK_PLAYER?.look?.job || '盗賊');
+  if (st.gameStatus !== 'GAME_OVER' && globalThis.Ending) return playEnding({ ...endingData({ ...st, grandSlam }), preview: !!GAMES[GAME].preview });   // preview＝ランキングに記録しない見本（今はどちらのゲームも記録する。2は60Fの表へ）
   if (st.gameStatus === 'GAME_OVER' && globalThis.GameOver) {   // ゲームオーバーの演出（js/gameover.js）：子犬が担架で運んでいく
     const hair = HAIR_PRESETS[globalThis.HK_PLAYER?.look?.hair];
-    return GameOver.play({ hair: hair && [hair[0], hair[1]], info: `到達 B${st.floor}F・${st.turn}ターン`,
-      onAgain: () => newGame(), onTitle: globalThis.Opening ? () => { newGame(); Opening.show(); } : null });
+    const collapse = st.deathReason === '落盤';   // 2の B60F 落盤：巻き込まれる1枚絵を背景に、「GAME OVER」の代わりに「落盤に巻き込まれた」、担架の子犬は出さない（2026-10-19 ユーザー指定）
+    const O = globalThis.Otakara, got = O ? O.forGameOver({ status: st.gameStatus, floor: st.floor, turns: st.turn, game: GAME, deathReason: st.deathReason }) : [];   // ゲームオーバーで手に入るおたから（坊主頭・ハードなボイルド。2026-10-20）
+    for (const u of got) O.add(u.id);
+    return GameOver.play({ hair: hair && [hair[0], hair[1]], info: `到達 B${st.floor}F・${st.turn}ターン`, got: got.map(u => ({ name: u.name, icon: O.icon(u.id) })),
+      ...(collapse ? { title: '落盤に巻き込まれた', reason: 'GAME OVER', bg: globalThis.ENDING_BG?.collapse, dark: 0.35, noRescue: true } : {}),
+      onAgain: () => { newGame(); globalThis.Inn?.depart(); }, onTitle: globalThis.Opening ? () => { newGame(); Opening.show(); } : null });
   }
   const over = st.gameStatus === 'GAME_OVER', r = HK.score(st);
   const el = $('#result');
   el.innerHTML = `<div class="box"><div class="eyebrow">${over ? 'GAME OVER' : st.gameStatus === 'CLEARED' ? 'DUNGEON CLEAR' : 'RETURNED'}</div>
-    <h2>${over ? '地下迷宮で力尽きた' : st.gameStatus === 'CLEARED' ? '地下迷宮を踏破した' : '地上へ帰還した'}</h2>
+    <h2>${over ? st.deathReason === '落盤' ? '落盤に巻き込まれた' : '地下迷宮で力尽きた' : st.gameStatus === 'CLEARED' ? '地下迷宮を踏破した' : '地上へ帰還した'}</h2>
     <p>到達 B${st.floor}F・${st.turn}ターン</p>${over ? '' : `<p class="total">${r.total}点</p>`}
     <button class="primary" id="again">もう一度 / B1F から</button>${globalThis.Opening ? ' <button id="to-title">タイトルへ</button>' : ''}</div>`;
   el.classList.add('open');
@@ -2611,11 +3198,35 @@ const UI_ICONS = {
   pack: { pal: { w: '#fbf3e2', k: '#221b17', D: '#3f2d21', d: '#5c422c', m: '#8a5a38', l: '#ae6f47', h: '#cca673', y: '#e1bc88', g: '#f0b84a' }, rows: [
     '..........wwwwwwwwww..........', '.........wkDDDDDDDDkw.........', '........wkDkkkkkkkkDkw........', '........wkDk......kDkw........', '........wkDk......kDkw........', '......wwkkDkkkkkkkkDkkww......', '.....wkkhhhhhhhhhhhlllkkw.....', '....wkhhhyyyhhDDhhhlllmmkw....', '...wkhhhyhhhhhDDhhhlllmmmkw...', '...wkhhhllllllDDllllllmmmkw...', '..wkkhhhllllllDDllllllmmmkkw..', '.wkDllllllllllDDllllllmmmdDkw.', '.wkDllllllllllDDllllllmmmdDkw.', '.wkDllllllllllDDllllllmmmdDkw.', '.wkDllllllllllDDllllllmmmdDkw.', '.wkDllllllllllDDllllllmmmdDkw.', '.wkDlDDDDDDDDDDDDDDDDDDDDdDkw.', '.wkDlldddddddggggdddddddddDkw.', '.wkDlllmmmmmmgDDgmmmmmmdddDkw.', '.wkDlllmmmmmmgDDgmmmmmmdddDkw.', '.wkDlllmmmmmmyggmmmmmmmdddDkw.', '.wkDllDDhhhhhhhhhhhhhhDDddDkw.', '.wkDllDlmmmmmmmmmmmmmmlDddDkw.', '.wkDllDlmmmmmmggmmmmmmlDddDkw.', '.wkDllDlmmmmmmggmmmmmmlDddDkw.', '.wkDllDlmmmmmmmmmmmmmmlDddDkw.', '..wkddDlmmmmmmmmmmmmmmlDddkw..', '..wkdddDDDDDDDDDDDDDDDDdddkw..', '...wkddddddddddddddddddddkw...', '....wkkkkkkkkkkkkkkkkkkkkw....', '.....wwwwwwwwwwwwwwwwwwww.....'] },
   shield: { pal: { a: '#7a8e9c', b: '#506573', c: '#b8c4cc' }, rows: ['.........', '.ccccccb.', '.caaaaab.', '.caaaaab.', '.caaaaab.', '..aaaab..', '..aaaab..', '...aab...', '....b....', '.........'] },
+  // 職業の紋章（2026-10-14、左下の顔グラの左上）：紋章の盾（20×24、紙は28×30。絵は盾から少しはみ出す）に、盗賊＝ナイフ・戦士＝鎧・魔法使い＝杖。制作/職業の紋章.py が作る行
+  job_thief: { pal: { F: '#2b3e6d', G: '#ae6f47', H: '#5c422c', K: '#0b1120', f: '#425c8d', g: '#f0b84a', h: '#8a5a38', s: '#b8c4cc', w: '#fbf3e2' }, rows: [
+    '............................', '............................', '............................', '.....KKKKKKKKKKKKKKKKKK.....', '....KgggggggggggggggggKKK...', '....KgfffffffffffffffKwwsK..', '....KgffffffffffffffKwwsK...', '....KgfffffffffffffKwwsK....', '....KgffffffffffffKwwsKK....', '....KgfffffffffffKwwsKGK....', '....KgffffffffffKwwsKFGK....', '....KgffffffKffKwwsKFFGK....', '....KgfffffKgKKwwsKFFFGK....', '....KgffffffKgwwsKFFFFGK....', '....KgffffffKKgKKFFFFFGK....', '....KgfffffKhHKgKFFFFFGK....', '....KgffffKhHKFKgKFFFFGK....', '....KgfffKhHKFFFKFFFFFGK....', '.....KgfKhHKFFFFFFFFFGK.....', '.....KgKhHKFFFFFFFFFFGK.....', '.....KKhHKFFFFFFFFFFFGK.....', '.....KggKFFFFFFFFFFFGK......', '......KKGFFFFFFFFFFGK.......', '.......KGFFFFFFFFFFGK.......', '........KGGFFFFFFGGK........', '.........KKGGGGGGKK.........', '...........KKKKKK...........', '............................', '............................', '............................'] },
+  job_warrior: { pal: { F: '#2b3e6d', G: '#ae6f47', K: '#0b1120', S: '#7a8e9c', f: '#425c8d', g: '#f0b84a', s: '#b8c4cc', w: '#fbf3e2' }, rows: [
+    '............................', '............................', '............................', '.....KKKKKKKKKKKKKKKKKK.....', '....KggggggggggggggggggK....', '....KgffffffffffffffffgK....', '....KgfffffffffffffffFgK....', '....KgffffffffffffffFFgK....', '....KgfKKKffKKKKffKKKFGK....', '....KKKsssKKggggKKSSSKKK....', '...KsssssssggggggSSSSSSSK...', '..KsssssssssggggSSSSSSSSSK..', '..KsssssswssssssSSSSSSSSSK..', '...KssssswsssssSSSSSSSSSK...', '....KKswsssssssSSSSSSSKK....', '....KKssssssssSSSSSSSSKK....', '....KgKsssssssSSSSSSSKGK....', '....KgKssssssssSSSSSSKGK....', '.....KKggggggggggggggKK.....', '.....KKsssssssSSSSSSSKK.....', '.....KgKssssssSSSSSSKGK.....', '......KgKsssssSSSSSKGK......', '.......KGKssssSSSSKGK.......', '.......KGFKKKKKKKKFGK.......', '........KGGFFFFFFGGK........', '.........KKGGGGGGKK.........', '...........KKKKKK...........', '............................', '............................', '............................'] },
+  job_mage: { pal: { F: '#2b3e6d', G: '#ae6f47', H: '#5c422c', K: '#0b1120', O: '#2b3e6d', f: '#425c8d', g: '#f0b84a', h: '#8a5a38', o: '#4aa3e8', w: '#fbf3e2' }, rows: [
+    '............................', '............................', '............................', '.....KKKKKKKKKKKKKKKKKK.....', '....KgggggggggggggggKKKK....', '....KgfffffffffffffKoooK....', '....KgffffffffffffKowoooK...', '....KgfffffffffffKowwoooOK..', '....KgffffffffffKgoooooOOK..', '....KgffffffffffKgooooOOOK..', '....KgffffffffffKKgooOOOK...', '....KgfffffffffKhHggOOOK....', '....KgffffffffKhHKKKggKK....', '....KgfffffffKhHKFFFKKGK....', '....KgffffffKhHKFFFFFFGK....', '....KgfffffKhHKFFFFFFFGK....', '....KgffffKhHKFFFFFFFFGK....', '....KgfffKhHKFFFFFFFFFGK....', '.....KgfKhHKFFFFFFFFFGK.....', '.....KgKhHKFFFFFFFFFFGK.....', '.....KKhHKFFFFFFFFFFFGK.....', '.....KhHKFFFFFFFFFFFGK......', '....KhHKGFFFFFFFFFFGK.......', '...KhHKKGFFFFFFFFFFGK.......', '..KhHK..KGGFFFFFFGGK........', '..KHK....KKGGGGGGKK.........', '...K.......KKKKKK...........', '............................', '............................', '............................'] },
+  job_thief_s: { pal: { F: '#2b3e6d', G: '#ae6f47', H: '#5c422c', K: '#0b1120', f: '#425c8d', g: '#f0b84a', h: '#8a5a38', s: '#b8c4cc', w: '#fbf3e2' }, rows: [
+    '...............', '...KKKKKKKKK...', '..KgggggggKKK..', '..KgfffffKwwsK.', '..KgfffKKwwsK..', '..KgffKgwwsKK..', '..KgffKKgKKGK..', '..KgfKhHKgKGK..', '..KgKhHKFKFGK..', '...KhHKFFFGK...', '..KggKFFFFGK...', '...KKGFFFGK....', '.....KGGGK.....', '......KKK......', '...............', '...............'] },
+  job_warrior_s: { pal: { G: '#ae6f47', K: '#0b1120', S: '#7a8e9c', f: '#425c8d', g: '#f0b84a', s: '#b8c4cc', w: '#fbf3e2' }, rows: [
+    '...............', '...KKKKKKKKK...', '..KgggggggggK..', '..KgKfKKKfKgK..', '..KKsKgggKSKK..', '..KsssgggSSSK..', '..KswssSSSSSK..', '..KKsssSSSSKK..', '..KKgggggggKK..', '...KKssSSSKK...', '...KgKsSSKGK...', '....KGKKKGK....', '.....KGGGK.....', '......KKK......', '...............', '...............'] },
+  job_mage_s: { pal: { F: '#2b3e6d', G: '#ae6f47', H: '#5c422c', K: '#0b1120', O: '#2b3e6d', f: '#425c8d', g: '#f0b84a', h: '#8a5a38', o: '#4aa3e8', w: '#fbf3e2' }, rows: [
+    '...............', '...KKKKKKKKK...', '..KgggggggggK..', '..KgfffffKKKK..', '..KgffffKwooK..', '..KgfffKgoooK..', '..KgffKhgooOK..', '..KgfKhHKggKK..', '..KgKhHKFKKGK..', '...KhHKFFFGK...', '..KhHKFFFFGK...', '.KhHKGFFFGK....', '.KHK.KGGGK.....', '..K...KKK......', '...............', '...............'] },
 };
-document.querySelectorAll('canvas[data-icon]').forEach(c => {
-  const ic = UI_ICONS[c.dataset.icon]; if (!ic) return;
+function paintIcon(c, name) {
+  const ic = UI_ICONS[name]; if (!ic) return;
   const img = bake(ic.rows, ic.pal); c.width = img.width; c.height = img.height; c.getContext('2d').drawImage(img, 0, 0);
-});
+}
+document.querySelectorAll('canvas[data-icon]').forEach(c => paintIcon(c, c.dataset.icon));
+const JOB_ICON = { 盗賊: 'job_thief', 戦士: 'job_warrior', 魔法使い: 'job_mage' };
+function setJobIcon(job) { const c = document.getElementById('job-ic'); if (c) { paintIcon(c, JOB_ICON[job] || 'job_thief'); c.title = job || '盗賊'; } }
+// ランキングの表などで使う紋章の絵（dataURL）。small＝小（15×16、ランキングの表の行）。職業のない古い記録は盗賊
+const jobIconCache = {};
+globalThis.HK_JOB_ICON = (job, small = false) => {
+  const k = (JOB_ICON[job] || 'job_thief') + (small ? '_s' : '');
+  if (!jobIconCache[k]) { const ic = UI_ICONS[k]; if (!ic) return ''; jobIconCache[k] = bake(ic.rows, ic.pal).toDataURL(); }
+  return jobIconCache[k];
+};
+setJobIcon('盗賊');
 
 // ---------------------------------------------------------------- マウス
 function tileFromEvent(ev) {
@@ -2631,7 +3242,7 @@ cv.addEventListener('mousemove', ev => {
   let html = '';
   if (en) html += `<b>${esc(en.name)}</b><br>体力 ${en.hp}/${en.maxHp}・攻撃 ${en.attack}${en.poison ? `・毒 あと${en.poison}回` : ''}`;
   if (it) html += `${html ? '<br>' : ''}<b>${esc(HK.cards[it.cardId].name)}</b><br>${esc(HK.cards[it.cardId].description)}`;
-  if (!html && st.exit.x === x && st.exit.y === y) html = st.floor === 30 ? '<b>階段</b><br>ここで探索を終え、踏破の得点を記録します。' : '<b>階段</b><br>ここに止まると次の階へ。前の階には戻れない。';
+  if (!html && st.exit.x === x && st.exit.y === y) html = st.floor === HK.LAST_FLOOR ? '<b>階段</b><br>ここで探索を終え、踏破の得点を記録します。' : '<b>階段</b><br>ここに止まると次の階へ。前の階には戻れない。';
   if (!html) { tip.classList.remove('show'); return; }
   const sr = $('#stage').getBoundingClientRect();
   tip.innerHTML = html; tip.classList.add('show');
@@ -2650,7 +3261,7 @@ cv.addEventListener('click', ev => {
   if (Math.abs(dx) + Math.abs(dy) === 1 && !busy) {
     if (selected) cancelAll();
     const d = dx === 1 ? 'd' : dx === -1 ? 'a' : dy === 1 ? 's' : 'w';
-    if (st.enemies.length && !st.hand.some(c => c.cardId === 'walk') && !globalThis.Tutorial?.active) return pickForced(d);   // 敵のいる階で「歩く」がない：どれで進むか選ぶ
+    if (st.version !== 2 && st.enemies.length && !st.hand.some(c => c.cardId === 'walk') && !globalThis.Tutorial?.active) return pickForced(d);   // 2は聞かずに自動（原作2と同じ。ロックしたカードは使わない）   // 敵のいる階で「歩く」がない：どれで進むか選ぶ
     autoMove(d);
   }
   else if (selected) cancelAll();                                              // 関係ないマス：選択を外す
@@ -2677,7 +3288,13 @@ document.addEventListener('keydown', ev => {
   if (ev.key === 'l' || ev.key === 'L') { toggleLog(); return; }
   if (DEV && (ev.key === 't' || ev.key === 'T')) { toggleFontCmp(); return; }
   if (DEV && (ev.key === 'u' || ev.key === 'U')) { previewBigCloseup(); return; }
-  if (DEV && (ev.key === 'e' || ev.key === 'E') && !busy && !globalThis.Ending?.active) { previewEnding(); return; }   // クリア演出の確かめ（見本の撃破と財宝で）
+  if (DEV && (ev.key === 'f' || ev.key === 'F')) { previewBigCloseup(true, ['d', 's', 'a', 'w'][previewDirAt++ % 4]); return; }   // 最後の一撃（スローモーション）の確認。押すたびに右・下・左・上
+  if (DEV && (ev.key === 'e' || ev.key === 'E') && !busy && !globalThis.Ending?.active) { previewEnding('CLEARED', ev.shiftKey ? { grandSlam: true } : {}); return; }   // Shift＋E：全職クリア（グランドスラム）の絵で
+  if (DEV && (ev.key === 'y' || ev.key === 'Y') && !busy && !globalThis.Ending?.active) { previewEndingAllKills(); return; }   // 確認用：全部の敵を倒したときのスコアの見本
+  if (DEV && (ev.key === 'h' || ev.key === 'H') && !busy && st?.gameStatus === 'PLAYING') { devNextBand(); return; }   // 確認用：CardRogue の追加の階（31・40・50・59F）を順に（曲の確かめ）
+  if (DEV && (ev.key === 'j' || ev.key === 'J') && !busy && st?.gameStatus === 'PLAYING') { ev.shiftKey ? devBoss59() : devToFloor59(); return; }   // 確認用：CardRogue の B59F（J＝ボスを倒したあと、Shift＋J＝ボス戦を装備つきで）
+  if (DEV && (ev.key === 'c' || ev.key === 'C') && !busy && st?.gameStatus === 'PLAYING') { CR.devCards(); return; }   // 確認用：全部のカードから手札に入れる（js/cardrogue.js）
+  if (DEV && (ev.key === 'k' || ev.key === 'K') && !busy && st?.gameStatus === 'PLAYING') { previewCollapse(); return; }   // 落盤の演出の確かめ   // クリア演出の確かめ（見本の撃破と財宝で）
   if (DEV && ev.shiftKey && /^Digit[1-5]$/.test(ev.code)) {        // 確認用：Shift＋1〜5 … そのカードを使ったときの行き先の演出だけ見る（ルールは動かない）
     const b = document.querySelectorAll('#hand .card')[Number(ev.code.slice(5)) - 1], c = b && st.hand.find(h => h.id === Number(b.dataset.id));
     if (c) {
@@ -2710,6 +3327,7 @@ document.addEventListener('keydown', ev => {
   const sel = selected && st.hand.find(c => c.id === selected);
   if ((ev.key === 'f' || ev.key === 'F') && sel && !busy) { startTargeting(sel, 'forced'); hideCardTip(); renderHand(); return; }
   if ((ev.key === 'x' || ev.key === 'X') && sel && !busy) return perform('discard', sel.id);
+  if ((ev.key === 'z' || ev.key === 'Z') && st.version === 2 && !busy && !targeting) return perform('wait');   // 2：その場で1ターン待機
   if (ev.key === 'Enter' || ev.key === ' ') {
     ev.preventDefault();
     if (targeting && targeting.dir) return targetConfirm();
@@ -2745,28 +3363,41 @@ let runStart = performance.now();   // プレイ時間（クリア演出のラ�
 // ---- 中断とつづきから（2026-10-09）：いまの探索をこのブラウザに保存する（localStorage の honekko.save.v1）
 // 1手ごと・階を降りたときに保存（チュートリアル中はしない）。ゲームオーバー・帰還・踏破と、「はじめから」で消す
 // 保存するのは logic の状態まるごと（乱数の関数だけは保存できないので、再開のときに Math.random をつなぐ＝原作の再開と同じ）と、見た目・プレイ時間
-const SAVE_KEY = 'honekko.save.v1';
+// 遊ぶゲーム（2026-10-18）：classic＝ほねっこの迷宮（1、30階層）、cardrogue＝CardRogue（2、60階層）。つづきからの保存は別々。
+// CardRogue のルール（D:/ほねっこの迷宮/CardRogue.html）はまだ入れていない。入れるまでは、CardRogue を選んでも1のルールで遊ぶ見本
+// （保存の rules で見分ける。ルールを入れたら rules を替えて、見本の保存は読まないようにする。見本の探索はランキング・おたからに記録しない）
+// 2026-10-18：CardRogue のルール（js/logic2.js）を入れた。rules を cardrogue2 にしたので、見本（1のルール）の保存は読まない。
+// preview は残す（ランキングとおたからに1と2を分けて記録する形が決まるまで、2は記録しない）
+const GAMES = { classic: { save: 'honekko.save.v1', rules: 'honekko1' }, cardrogue: { save: 'honekko.save.cardrogue.v1', rules: 'cardrogue2' } };   // 2026-10-20：2も記録する（preview をやめた。ランキングは60Fの表へ）
+let GAME = 'classic';
+const HK1 = globalThis.HK;
+function useRules(game) { HK = game === 'cardrogue' && globalThis.HK2 ? globalThis.HK2 : HK1; }   // ゲームごとのルール（HK は全部の場所でこれを見る）
+const gameOf = g => (GAMES[g] ? g : 'classic');
+const lookFor = (look, game) => (look && game === 'classic' ? { ...look, job: '盗賊' } : look);   // 1には職業がないので、盗賊
+const SAVE_KEY = GAMES.classic.save;
 function saveRun() {
   if (!st || st.gameStatus !== 'PLAYING' || globalThis.Tutorial?.active) return;
   try {
     const { rng, ...state } = st; void rng;
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 1, state, look: globalThis.HK_PLAYER?.look || null, ms: Math.round(performance.now() - runStart), savedAt: Date.now(), locked: [...lockedCards] }));
+    rareRoll();
+    localStorage.setItem(GAMES[GAME].save, JSON.stringify({ version: 1, game: GAME, rules: GAMES[GAME].rules, state, rare, look: globalThis.HK_PLAYER?.look || null, ms: Math.round(performance.now() - runStart), savedAt: Date.now(), locked: [...lockedCards] }));
   } catch { /* 保存できないとき（プライベートウィンドウなど）は、つづきからなし */ }
 }
-function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch { /* なし */ } }
-function readSave() {
+function clearSave(game = GAME) { try { localStorage.removeItem(GAMES[gameOf(game)].save); } catch { /* なし */ } }
+function readSave(game = GAME) {
   try {
-    const d = JSON.parse(localStorage.getItem(SAVE_KEY)), s = d && d.state;
-    const ok = d && d.version === 1 && s && s.gameStatus === 'PLAYING' && Array.isArray(s.map) && s.map.length === 10 && s.player && s.exit
+    const G = GAMES[gameOf(game)], d = JSON.parse(localStorage.getItem(G.save)), s = d && d.state;
+    const ok = d && d.version === 1 && (d.rules || 'honekko1') === G.rules && s && s.gameStatus === 'PLAYING' && Array.isArray(s.map) && s.map.length === 10 && s.player && s.exit
       && Array.isArray(s.hand) && Array.isArray(s.drawPile) && Array.isArray(s.discardPile) && Array.isArray(s.enemies) && Number.isInteger(s.floor);
     return ok ? d : null;
   } catch { return null; }
 }
-function resumeRun() {
-  const d = readSave(); if (!d) return false;
-  applyLook(d.look);
+function resumeRun(game = GAME) {
+  const d = readSave(game); if (!d) return false;
+  GAME = gameOf(game); useRules(GAME); applyLook(lookFor(d.look, GAME));
   newGame();                                       // 演出・ログ・選択を片付けてから、保存した状態に差し替える
   st = { ...d.state, rng: Math.random }; runStart = performance.now() - (d.ms || 0);
+  rare = d.rare && d.rare.skin ? { seen: {}, ...d.rare } : newRare();   // レアスキンの抽選の結果（前の保存にはないので、そのときは引き直す）
   for (const id of d.locked || []) lockedCards.add(id);
   globalThis.Music?.floor(st.floor);
   buildBackground(); syncView(true); renderStatus(); $('#hand').innerHTML = ''; animateHand({ hand: [], drawN: 99, discN: 0 });
@@ -2775,7 +3406,8 @@ function resumeRun() {
 }
 function newGame() {
   globalThis.Tutorial?.stop();
-  st = HK.newRun(); runStart = performance.now(); lockedCards.clear();
+  useRules(GAME);
+  st = GAME === 'cardrogue' ? CR.newRun() : HK.newRun(); runStart = performance.now(); lockedCards.clear(); rare = newRare();   // 2は職業ごとの初期デッキ
   globalThis.Music?.floor(st.floor);
   logHistory.length = 0; if (logOpen()) renderLogPanel();
   targeting = null; selected = null; queued = null; busy = false;
@@ -2790,6 +3422,7 @@ function startGameFromTitle() {
   $('#title').classList.remove('open');
 }
 $('#log-tab').onclick = () => { startAudio(); toggleLog(); };
+if ($('#wait-btn')) $('#wait-btn').onclick = () => { startAudio(); if (st?.version === 2 && st.gameStatus === 'PLAYING' && !busy) { cancelAll(); perform('wait'); } };   // 2：その場で1ターン待機（Z）
 // 除外の束を押すと、除外したカードを文字の一覧で（同じカードはまとめる。居場所の一覧ではないので、デッキのリボルバーには入れない）
 $('#rem').onclick = () => {
   startAudio();
@@ -2834,7 +3467,7 @@ $('#title').onclick = startGameFromTitle;
 let last = performance.now();
 function tick(now) {
   const dt = Math.min(50, now - last); last = now;
-  if (now >= hitstopUntil) clock += dt * speed;
+  if (now >= hitstopUntil) clock += dt * (slowmo > 0 ? slowmo : speed);   // slowmo：最後の一撃のスローモーション（speed より優先）
   for (let i = waiters.length - 1; i >= 0; i--) if (clock >= waiters[i].at) { const w = waiters.splice(i, 1)[0]; w.res(); }
   stepTwk();
   if (st) { draw(now); placeBubble(now); drawHpFx(now); drawCardFx(now); }
@@ -2846,6 +3479,7 @@ const TUTOR_LOOK = { nation: '東国人', style: 'センターパート', iris: 
 function applyLook(look) {
   const fl = globalThis.Otakara ? Otakara.faceLook(look) : look;   // おたから（look.ota）を顔グラの部品・髪に当てた見た目
   if (fl) { globalThis.FaceAnim?.setLook(fl); setPlayerHair(fl.hair || fl.nation || null); }
+  setPlayerJob(look?.job);   // 盤の主人公の絵（職業）
   globalThis.HK_PLAYER = look ? { nation: look.nation, look: { ...look } } : null;   // ランキングのキャラアイコンなどで使う予定
 }
 // チュートリアル（js/tutorial.js）：練習の盤を組む・やめてタイトルへ
@@ -2858,21 +3492,29 @@ globalThis.Tutorial?.init({
   },
   quit() { newGame(); if (globalThis.Opening) Opening.show(); },
 });
+// 2（CardRogue）だけの入力と見せ方（js/cardrogue.js）。中で使う状態と関数を渡す（st・HK は今の値）
+const CR = globalThis.CardRogueKit({
+  get st() { return st; }, get HK() { return HK; }, DIRV, T, say, bumpFace, perform, showDialog, cancelAll, closeDialog, findView, wait, sprDir, addFx, hitstop,
+  enemyHurt, tween, footX, footY, easeOut, addMark, enemyDie, shake, sfx, spr, iconRef, ctx, S, scaleNow, fxLight,
+  get clock() { return clock; }, get view() { return view; }, iconCanvas, renderHand, renderStatus, saveRun, cancelAll2: () => cancelAll(), syncUI: () => { syncView(); renderUI(); }, get selected() { return selected; },
+  beginTargeting(cobj, extra = null) { selected = cobj.id; startTargeting(cobj, 'effect'); if (extra) targeting.extra = extra; hideCardTip(); renderHand(); },
+});
 fit(); setFlat(true); newGame();
 document.getElementById('loading')?.remove();
 // OP（js/opening.js）：タイトル → 種族えらび → キャラメイク。終わったら見た目を当てて B1F から始める
 if (globalThis.Opening) Opening.init({
   spr, PGROUP, hairSwap, startAudio, ground: SPR.groups[PGROUP].ground ?? 40,
-  begin(look, keepSave = false) {                // keepSave：?skipop で開いたとき（つづきからの保存は消さない）
-    startAudio(); applyLook(look);
+  hasSprite: group => !!SPR.groups[group], groundOf: group => SPR.groups[group]?.ground ?? 40,   // 職業えらび（2026-10-14）：職業の絵があるか・足もとの高さ
+  begin(look, keepSave = false, game = 'classic') {   // keepSave：?skipop で開いたとき（つづきからの保存は消さない）。game：classic（ほねっこの迷宮）・cardrogue（CardRogue）
+    GAME = gameOf(game); startAudio(); applyLook(lookFor(look, GAME));
     if (!keepSave) clearSave();
     newGame();
-    if (!keepSave) saveRun();
+    if (!keepSave) { saveRun(); globalThis.Inn?.depart(); }   // 出撃（宿屋の猫：おなか＋♡がそろっていれば、戻ったときに育つ）
   },
-  saveInfo() { const d = readSave(); return d && { floor: d.state.floor, turn: d.state.turn, savedAt: d.savedAt }; },   // つづきからの中身（なければ null）
-  resume() { startAudio(); return resumeRun(); },
+  saveInfo(game = 'classic') { const d = readSave(game); return d && { floor: d.state.floor, turn: d.state.turn, savedAt: d.savedAt }; },   // つづきからの中身（なければ null）
+  resume(game = 'classic') { startAudio(); return resumeRun(game); },
   tutorial(look) {                      // メニューの「遊び方」：盤のキャラは前にキャラメイクした見た目、左下の顔は教える役のキャラ
-    startAudio(); applyLook(look);
+    startAudio(); GAME = 'classic'; useRules(GAME); applyLook(look);   // 練習は1のルール
     globalThis.FaceAnim?.setLook(TUTOR_LOOK);
     globalThis.Tutorial?.start();
   },
@@ -2884,11 +3526,21 @@ if (globalThis.Opening) Opening.init({
 });
 else $('#title').classList.add('open');
 requestAnimationFrame(frame);
-function previewEnding(status = 'CLEARED') {   // クリア演出の確かめ（いまの状態に、撃破と財宝を足した見本で）
-  const s = { ...st, gameStatus: status, kills: { rat: 6, goblin: 4, orc: 3, 'depth-4': 2, 'depth-5': 2, 'depth-8': 1, 'depth-11': 1 },
-    drawPile: [...st.drawPile, ...['gem', 'gem', 'gold', 'gold', 'gold', 'copper', 'crown'].map((cardId, i) => ({ cardId, id: 90000 + i }))] };
-  playEnding({ ...endingData(s), preview: true });   // 見本なので、ランキングには記録しない（ending.js）
+// 確認用（Y、?dev）：全部の階の敵を全部倒したときのスコアの見本（2026-10-20 ユーザー：敵の種類が増えたときの並びを見たい）。
+// 元のルールの敵の出方（1階に深さ d,d,d+1,d+2 の4体、d＝(階−1)÷3＋1）で、最後の階まで数える。2はボス（B59F）を足す
+function previewEndingAllKills() {
+  const last = GAME === 'cardrogue' ? 58 : 30, kills = {};
+  const typeOf = n => ['rat', 'goblin', 'orc'][n - 1] ?? `depth-${n}`;
+  for (let f = 1; f <= last; f++) { const d = Math.floor((f - 1) / 3) + 1; for (const n of [d, d, d + 1, d + 2]) kills[typeOf(n)] = (kills[typeOf(n)] || 0) + 1; }
+  if (GAME === 'cardrogue') kills.pitLord = 1;
+  for (const k of Object.keys(kills)) { try { HK.enemyInfo(k); } catch { delete kills[k]; } }   // そのルールにいない敵は数えない
+  previewEnding('CLEARED', { kills, floor: GAME === 'cardrogue' ? 60 : 30 });
 }
-globalThis.__demo = { get st() { return st; }, startAudio, previewEnding, setPlayerHair, HAIR_PRESETS, makeFrame, ANIM_SETS, bgZone, tickBackground, get busy() { return busy; }, view, camS, say, hpHitFx, previewBigCloseup, dofMat, playCardFx, cardFate, cardFxList, perform, autoMove, selectCard, newGame, setFlat, step: () => tick(performance.now()), setSpeed(v) { baseSpeed = speed = v; }, resync() { buildBackground(); syncView(true); renderUI(); } };
+function previewEnding(status = 'CLEARED', extra = {}) {   // クリア演出の確かめ（いまの状態に、撃破と財宝を足した見本で）。extra：{ grandSlam: true } で全職クリアの絵
+  const s = { ...st, ...extra, gameStatus: status, kills: extra.kills || { rat: 6, goblin: 4, orc: 3, 'depth-4': 2, 'depth-5': 2, 'depth-8': 1, 'depth-11': 1 },
+    drawPile: [...st.drawPile, ...['gem', 'gem', 'gold', 'gold', 'gold', 'copper', 'crown'].map((cardId, i) => ({ cardId, id: 90000 + i }))] };
+  playEnding({ ...endingData(s), preview: true, demo: true });   // 見本なので、ランキングには記録せず、おたからも手に入れない（ending.js）
+}
+globalThis.__demo = { get st() { return st; }, get rare() { return rare; }, rareRoll, get GAME() { return GAME; }, get bgCanvas() { return bgCx.canvas; }, BOARD_THEMES, startAudio, previewEnding, setPlayerHair, HAIR_PRESETS, makeFrame, ANIM_SETS, bgZone, tickBackground, get busy() { return busy; }, view, camS, say, hpHitFx, previewBigCloseup, dofMat, playCardFx, cardFate, cardFxList, perform, autoMove, selectCard, newGame, setFlat, step: () => tick(performance.now()), setSpeed(v) { baseSpeed = speed = v; }, resync() { buildBackground(); syncView(true); renderUI(); } };
 };
 })();

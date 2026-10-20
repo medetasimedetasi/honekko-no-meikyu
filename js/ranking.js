@@ -13,14 +13,14 @@
 //   Ranking.online.submit(e)    → { ok, rank, total }  送る（つながらなければ、あとで送り直す印をつけておく）
 //   Ranking.online.fetch(n)     → { ok, total, list }  上から n 件
 //   Ranking.online.flush()      まだ送れていない記録を送り直す
+// 2026-10-20：1（ほねっこの迷宮・30F）と2（CardRogue・60F）でランキングを分けた。Ranking.for(game) がそのゲームの表（中身は上と同じ形）。
+//   Ranking そのものは今までどおり1の表。2の表はこのブラウザでは別の置き場所（KEY＋'.60f'）、オンラインでは送り先の別のシート（game: 'cardrogue'）。
+//   オンラインの2の表は、送り先（Code.gs）が game を分けられる版に出し直されているときだけ使う（?game=cardrogue に game が返ってくるかで確かめる）。
 (() => {
 'use strict';
 // 記録の置き場所と版の名前は js/ranking_config.js で替えられる（全体公開版は身内版と同じ github.io に置くので、置き場所を分けないと「このブラウザ」の記録がまざる）
 const KEY = globalThis.HK_RANKING_KEY || 'honekko.ranking.v1', NAME_KEY = 'honekko.lastName', MAX = 50, VERSION = globalThis.HK_RANKING_VERSION || 'test-20261009';
 const URL_ = String(globalThis.HK_RANKING_URL || '').trim();
-const read = () => { try { const a = JSON.parse(localStorage.getItem(KEY)); return Array.isArray(a) ? a : []; } catch { return []; } };
-let list = read();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* 保存できない（プライベートウィンドウなど）ときは、閉じるまでだけ */ } };
 const order = (a, b) => b.score - a.score || a.turns - b.turns || a.ms - b.ms;
 const mmss = ms => { const s = Math.floor((ms || 0) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const reach = e => (e.status === 'CLEARED' ? '踏破' : `帰還 B${e.floor ?? '?'}F`);
@@ -36,14 +36,26 @@ async function call(opts = {}, query = '') {
     return await res.json();
   } finally { clearTimeout(timer); }
 }
+function board(game) {
+const KEY_ = game === 'cardrogue' ? KEY + '.60f' : KEY, G = game === 'cardrogue' ? 'cardrogue' : null;   // 1は今までどおり（game を送らない）
+const read = () => { try { const a = JSON.parse(localStorage.getItem(KEY_)); return Array.isArray(a) ? a : []; } catch { return []; } };
+let list = read();
+const save = () => { try { localStorage.setItem(KEY_, JSON.stringify(list)); } catch { /* 保存できない（プライベートウィンドウなど）ときは、閉じるまでだけ */ } };
+let ready = null;   // 2：送り先が game を分けられる版か（1回だけ確かめる。つながらなかったときは次にまた確かめる）
+const isReady = () => {
+  if (!G) return Promise.resolve(true);
+  if (!ready) ready = call({}, `?n=1&game=${G}`).then(r => { if (!(r && r.ok)) ready = null; return !!(r && r.ok && r.game === G); }).catch(() => { ready = null; return false; });
+  return ready;
+};
 const online = {
   get enabled() { return !!URL_; },
   async submit(e) {
     if (!URL_) return { ok: false, error: 'no-url' };
+    if (!(await isReady())) return { ok: false, error: 'not-ready' };
     try {
       // 絵は顔グラを送る（約4KB。送り先の上限 8000 文字を超えるときは、キャラの頭の小さな絵）
       const pic = e.face && e.face.length <= 8000 ? e.face : (e.icon || '');
-      const body = { id: e.id, name: e.name, score: e.score, status: e.status, floor: e.floor, turns: e.turns, ms: Math.round(e.ms || 0), icon: pic, version: VERSION };
+      const body = { id: e.id, name: e.name, score: e.score, status: e.status, floor: e.floor, turns: e.turns, ms: Math.round(e.ms || 0), icon: pic, job: e.job || '盗賊', version: VERSION, ...(G ? { game: G } : {}) };
       const r = await call({ method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
       if (r && r.ok) { e.sent = true; e.onlineRank = r.rank; save(); }
       return r || { ok: false };
@@ -51,15 +63,16 @@ const online = {
   },
   async fetch(n = 50) {
     if (!URL_) return { ok: false, error: 'no-url' };
-    try { return await call({}, `?n=${n}`); } catch (err) { return { ok: false, error: String(err && err.name || err) }; }
+    if (!(await isReady())) return { ok: false, error: 'not-ready' };
+    try { return await call({}, `?n=${n}${G ? `&game=${G}` : ''}`); } catch (err) { return { ok: false, error: String(err && err.name || err) }; }
   },
   async flush() {
-    if (!URL_) return;
+    if (!URL_ || !(await isReady())) return;
     for (const e of list.filter(x => !x.sent && x.id)) { const r = await online.submit(e); if (!r.ok) break; }
   },
 };
 
-globalThis.Ranking = {
+return {
   add(e) {
     const entry = { ...e, id: newId(), date: Date.now(), sent: false };
     list.push(entry); list.sort(order);
@@ -73,10 +86,13 @@ globalThis.Ranking = {
   get lastName() { try { return localStorage.getItem(NAME_KEY) || 'ローグ'; } catch { return 'ローグ'; } },
   set lastName(v) { try { localStorage.setItem(NAME_KEY, v); } catch { /* 保存なし */ } },
   text() {
-    return ['ほねっこの迷宮 ランキング（テストプレイ）', ...list.map((e, i) =>
+    return [`ほねっこの迷宮 ランキング${G ? '（60F）' : '（30F）'}（テストプレイ）`, ...list.map((e, i) =>
       `${i + 1}位 ${e.name} ${e.score}点 ${reach(e)} ${e.turns}ターン ${mmss(e.ms)} (${day(e.date)})`)].join('\n');
   },
   clear() { list = []; save(); },
   online, mmss, reach,
 };
+}
+const boards = { classic: board('classic'), cardrogue: board('cardrogue') };
+globalThis.Ranking = Object.assign(boards.classic, { for: game => boards[game] || boards.classic });   // Ranking＝1の表、Ranking.for('cardrogue')＝2の表
 })();

@@ -88,6 +88,7 @@ body.log-open #log { opacity: 0; }
 #hud-me { position: absolute; left: calc(var(--u) * 4); bottom: calc(var(--u) * -3); pointer-events: none; }
 .face { width: calc(var(--u) * 96); height: calc(var(--u) * 96); }
 #portrait { width: 100%; height: 100%; display: block; }
+#job-ic { position: absolute; left: calc(var(--u) * -2); top: calc(var(--u) * -12); width: calc(var(--u) * 28); height: calc(var(--u) * 30); }   /* 帽子に隠れないよう、顔グラの枠より少し上へ（2026-10-14） */   /* 職業の紋章（顔グラの左上。2026-10-14） */
 
 /* 上辺の真ん中：体力と防御（原作に近い並べ方。盤と同じ幅の長い棒、その下に効果） */
 #status { position: absolute; left: 50%; top: calc(var(--u) * 2); width: calc(var(--u) * 192); transform: translateX(-50%); pointer-events: none; text-shadow: 0 calc(var(--u) * 1) 0 #000; }
@@ -120,6 +121,8 @@ body.log-open #log { opacity: 0; }
 /* 文字の下の影（乗算で下の床を暗くする） */
 #say-shadow { position: absolute; left: 50%; top: calc(var(--u) * 88); transform: translate(-50%, -50%); z-index: 5; pointer-events: none; mix-blend-mode: multiply; opacity: 0; transition: opacity .35s; }
 #say-shadow.show { opacity: 1; transition: opacity .08s; }
+#say.alarm, #say-shadow.alarm { top: calc(var(--u) * 132); }     /* 落盤の知らせは画面の真ん中に */
+#say.alarm.show { opacity: 1; }                                   /* 落盤の知らせは透かさない */
 /* 画面の文字（マルモニカ・黒縁取り・少し透かす）。ドット書体なので、大きさは fit() で書体本来の 16px の整数倍にそろえ（--fs-*）、
    縁取りは書体の1ドットぶんの太さ（--o-*）で8方向に引く。ダメージの数字と、紙の上の小さな文字はそのまま */
 .mm { font-family: 'MaruMonica', 'DotGothic16', monospace; font-weight: normal; line-height: 1; opacity: .9; letter-spacing: 0;
@@ -173,13 +176,18 @@ body.log-open #log { opacity: 0; }
   display: flex; flex-direction: column; align-items: center;
   transition: transform .09s steps(3), opacity .15s, translate .14s ease-out;
 }
-.card .band { position: relative; width: 100%; height: calc(var(--u) * 9); background: var(--kc, #6e655a); border-bottom: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 calc(var(--u) * 1) 0 #fbf3e255, inset 0 calc(var(--u) * -2) 0 #0003;
+.card .band { position: relative; width: 100%; height: calc(var(--u) * 7);   /* 2026-10-18：9→7（ユーザー指定、絵と名前を上げるため） */ background: var(--kc, #6e655a); border-bottom: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 calc(var(--u) * 1) 0 #fbf3e255, inset 0 calc(var(--u) * -2) 0 #0003;
   display: flex; align-items: center; justify-content: center; }
 /* 色帯の字：効果といまの数値（白に濃い縁）。鍵は右端 */
 .card .band .eff { font-weight: normal; line-height: 1; color: #fbf3e2; white-space: nowrap;
   text-shadow: calc(var(--u) * .5) 0 0 #221b17, calc(var(--u) * -.5) 0 0 #221b17, 0 calc(var(--u) * .5) 0 #221b17, 0 calc(var(--u) * -.5) 0 #221b17; }
 .card .band .lock { position: absolute; right: calc(var(--u) * 2); top: calc(var(--u) * .5); width: calc(var(--u) * 7); height: calc(var(--u) * 8); background: var(--lock) 0 0 / 100% 100%; image-rendering: pixelated; }
-.card .art { position: relative; display: block; width: calc(var(--u) * 36); height: calc(var(--u) * 36); margin: 0 0 calc(var(--u) * 1); }
+/* 手札の錠前（2026-10-18 ユーザー指定）：絵の右上に。押すとロックの切り替え。外しているときは開いた錠前を薄く、ロック中は閉じた錠前 */
+.card .lk { position: absolute; right: calc(var(--u) * 1); top: calc(var(--u) * 9); width: calc(var(--u) * 11); height: calc(var(--u) * 12); padding: calc(var(--u) * 2); z-index: 1; cursor: pointer; opacity: .45; }
+.card .lk i { display: block; width: calc(var(--u) * 7); height: calc(var(--u) * 8); background: var(--lock-open) 0 0 / 100% 100%; image-rendering: pixelated; }
+.card .lk.on { opacity: 1; } .card .lk.on i { background-image: var(--lock); }
+.card .lk:hover { opacity: 1; }
+.card .art { position: relative; display: block; width: calc(var(--u) * 36); height: calc(var(--u) * 36); margin: 0; }   /* 下のすき間 1→0（名前を上げる） */
 .card .icon { width: calc(var(--u) * 36); height: calc(var(--u) * 36); display: block; }   /* 絵は18×18（外周の黒を含む）を2倍 */
 /* 合成の段（＋2 など）：絵の右下（手札をしまっていても、両端のカードでぎりぎり見える高さ）に、太いドットの数字（黒・白の縁）を1倍・不透明度80％で（大きさは game3d.js の plusImage が付ける） */
 .card .art .plus { position: absolute; right: calc(var(--u) * -2); top: calc(var(--u) * 18); image-rendering: pixelated; display: block; opacity: .8; }
@@ -191,13 +199,14 @@ body.log-open #log { opacity: 0; }
 .card .key { position: absolute; right: calc(var(--u) * 3); bottom: calc(var(--u) * 3); font-size: calc(var(--u) * 5); color: #3f2d2155; }
 /* 扇形に持つ：カードごとの傾き（--rot）。手をかざすと、その傾きの向きのまま持ち上がる */
 .card { transform: rotate(var(--rot, 0deg)); transform-origin: 50% 85%; }
-.card:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -20)); z-index: 2; }
-.card.sel { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); outline: calc(var(--u) * 1) solid var(--gold); z-index: 1; }
-.card.sel:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -20)); }
+.card:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); z-index: 2; }   /* 持ち上がりを低く（2026-10-18 ユーザー指定。前は -20／-12） */
+.card.sel { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -7)); outline: calc(var(--u) * 1) solid var(--gold); z-index: 1; }
+.card.sel:hover { transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -12)); }
 .card.leaving { opacity: 0; transform: rotate(var(--rot, 0deg)) translateY(calc(var(--u) * -30)); }
 .k-move { --kc: #5c7236; } .k-atk { --kc: #8f2f2b; } .k-def { --kc: #425c8d; }
 .k-food { --kc: #cca673; } .k-potion { --kc: #d24a3c; } .k-treasure { --kc: #f0b84a; }
 .k-scroll { --kc: #6e655a; } .k-charm { --kc: #ae6f47; } .k-misc { --kc: #506573; }
+.k-magic { --kc: #647091; } .k-skill { --kc: #6e655a; }   /* 2（CardRogue）の魔法・技 */
 
 /* 行き先の演出：ゲームの解像度で描いたカード（.cardfx）と、粒の層（#card-fx） */
 .cardfx { position: absolute; image-rendering: pixelated; pointer-events: none; z-index: 5; transform-origin: 50% 50%; }
@@ -291,13 +300,26 @@ body.log-open #log { opacity: 0; }
 #dlg-actions button.pickc small { color: var(--ink-dim); }
 #dlg-actions button.pickc.lockd { position: relative; }
 #dlg-actions button.pickc.lockd::after { content: ''; position: absolute; right: calc(var(--u) * 3); top: calc(var(--u) * 3); width: calc(var(--u) * 7); height: calc(var(--u) * 8); background: var(--lock) 0 0 / 100% 100%; image-rendering: pixelated; }   /* ロックしたカードは鍵（選べる） */
-#cardtip button, #dlg-actions button {
+#cardtip button, #dlg-actions button, #wait-btn {
   --fr: var(--fr-btn); color: var(--ink); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace; opacity: 1;
   border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
   border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
   padding: 0 calc(var(--u) * 1); font-size: var(--fs-m); line-height: 1.2;
 }
-#cardtip button:hover, #dlg-actions button:hover { --fr: var(--fr-btn-h); }
+#cardtip button:hover, #dlg-actions button:hover, #wait-btn:hover { --fr: var(--fr-btn-h); }
+#wait-btn { position: absolute; left: calc(var(--u) * 102); bottom: calc(var(--u) * 6); }   /* 2（CardRogue）の待機：左下の顔グラの横（2026-10-18 ユーザー指定）。1には出さない */
+#wait-pile { position: absolute; left: calc(var(--u) * 50); top: calc(var(--u) * 62); }   /* 盗賊の一時待機：捨て札の下（2026-10-18 ユーザー指定） */
+#wait-btn[hidden], #wait-pile[hidden] { display: none; }
+/* 確認用（?dev の C）：全部のカードの一覧から手札に入れる窓 */
+#cr-dev { position: absolute; inset: calc(var(--u) * 6); z-index: 40; background: #16130fee; border: calc(var(--u) * 1) solid #cca673; color: #fbf3e2; display: flex; flex-direction: column; padding: calc(var(--u) * 4); gap: calc(var(--u) * 3); font-size: var(--fs-s); }
+#cr-dev .bar { display: flex; gap: calc(var(--u) * 3); align-items: center; flex-wrap: wrap; }
+#cr-dev .bar button, #cr-dev .list button { background: #2c3a48; color: #fbf3e2; border: calc(var(--u) * .5) solid #506573; padding: calc(var(--u) * 1) calc(var(--u) * 2); font: inherit; cursor: pointer; }
+#cr-dev .bar input { font: inherit; padding: calc(var(--u) * 1); width: calc(var(--u) * 60); }
+#cr-dev .list { overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 54), 1fr)); gap: calc(var(--u) * 2); }
+#cr-dev .list button { display: flex; align-items: center; gap: calc(var(--u) * 2); text-align: left; }
+#cr-dev .list button canvas { width: calc(var(--u) * 18); height: calc(var(--u) * 18); image-rendering: pixelated; flex: none; }
+#cr-dev h4 { margin: calc(var(--u) * 2) 0 0; grid-column: 1 / -1; color: #cca673; font-weight: normal; }
+.cr-fly { position: absolute; z-index: 6; pointer-events: none; background: #4a4640; border: calc(var(--u) * 1) solid var(--edge); box-shadow: inset 0 0 0 calc(var(--u) * 1) #6e655a; }   /* 一時待機から捨て札へ飛ぶカード（2の盗賊） */
 /* スマホ（指で触る画面）だけ、カードの説明の窓のボタンを大きく（押しやすく。2026-10-10） */
 @media (pointer: coarse) {
   #cardtip button { font-size: var(--fs-l); padding: calc(var(--u) * 2) calc(var(--u) * 4); min-height: calc(var(--u) * 18); }
@@ -398,6 +420,9 @@ body.log-open #log { opacity: 0; }
 #end-win td { padding: calc(var(--u) * 1) calc(var(--u) * 4); text-align: right; vertical-align: middle; }
 #end-win td:nth-child(2) { text-align: left; }
 #end-win td img { width: calc(var(--u) * 14); height: calc(var(--u) * 14); image-rendering: pixelated; display: block; }
+#end-win td.pic { display: flex; align-items: center; gap: calc(var(--u) * 2); }
+#end-win td.pic img.job { width: calc(var(--u) * 15); height: calc(var(--u) * 16); }   /* 職業の紋章（小。15×16 粒を等倍） */
+#end-win td.jb { text-align: left; }
 #end-win tr.me td { color: var(--gold); }
 #end-win .online { color: var(--ink-dim); text-align: center; margin: calc(var(--u) * 5) 0 0; }
 #end-hint { position: absolute; left: 0; right: 0; bottom: calc(var(--u) * 6); text-align: center; color: var(--ink-dim); display: none; pointer-events: none; }
@@ -427,7 +452,76 @@ body.log-open #log { opacity: 0; }
   border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
   padding: 0 calc(var(--u) * 3); line-height: 1.2; }
 #op-back.show { display: block; }
+/* 職業えらび（2026-10-14）：まん中のキャラはキャンバスに描く。名前（窓なし・縁取り）と、左右の大きな ◀ ▶ */
+#op-job { position: absolute; inset: 0; display: none; pointer-events: none; }
+#op-job.show { display: block; }
+#op-job .nm { position: absolute; left: 0; right: 0; top: calc(var(--u) * 202); text-align: center; color: #fbf3e2; opacity: 1; pointer-events: auto; cursor: pointer; width: max-content; margin: 0 auto; }
+#op-job .arr { position: absolute; top: calc(var(--u) * 103); width: calc(var(--u) * 20); height: calc(var(--u) * 34); padding: 0; border: 0; background: none; cursor: pointer; pointer-events: auto; }
+#op-job .arr img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }   /* ドットの三角（10×17 粒を、1粒＝2u で。2026-10-14 ユーザー指定で 3u から小さく） */
+#op-job .arr img.h, #op-job .arr:hover img.n { display: none; } #op-job .arr:hover img.h { display: block; }
+#op-job .arr.l { left: calc(var(--u) * 155); } #op-job .arr.r { left: calc(var(--u) * 305); }
+#op-job .arr:active { translate: 0 calc(var(--u) * 2); }
 #op-back:hover { --fr: var(--fr-btn-h); }
+/* 宿屋（猫の育成、2026-10-20）：タイトルの間だけ左下に。ダンディ・キャットを倒して戻るまではグレー（押せない）。js/inn.js */
+#op-inn { position: absolute; left: calc(var(--u) * 8); bottom: calc(var(--u) * 6); display: none; cursor: pointer; color: var(--ink);
+  --fr: var(--fr-btn); background: none; box-shadow: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace;
+  border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
+  border-image: var(--fr) var(--fr-btn-s) var(--fr-btn-s) var(--fr-btn-b) fill / calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b)) stretch;
+  padding: 0 calc(var(--u) * 6); line-height: 1.2; }
+#op-inn.show { display: block; }
+#op-inn:hover:not(:disabled) { --fr: var(--fr-btn-h); }
+#op-inn:active:not(:disabled) { translate: 0 calc(var(--u) * 1); }
+#op-inn:disabled { cursor: default; color: #506573; filter: grayscale(1) brightness(.7); }
+/* 宿屋が開いたときの案内（1回だけ）：「宿屋」の上にふきだしの窓 */
+#op-notice { position: absolute; left: calc(var(--u) * 8); bottom: calc(var(--u) * 30); display: none; color: #fbf3e2; padding: calc(var(--u) * 4) calc(var(--u) * 8); cursor: pointer; }
+#op-notice.show { display: block; }
+/* 宿屋の画面（js/inn.js）。--iu＝見本の1ドット、--ifs＝文字（マルモニカの 16px の整数倍） */
+#inn { position: absolute; inset: 0; z-index: 101; display: none; place-items: center; background: #0b1120; color: #fbf3e2; font-family: 'MaruMonica', 'DotGothic16', monospace; }
+#inn.show { display: grid; }
+#inn .inn-frame { box-sizing: border-box; image-rendering: pixelated; border-style: solid; border-color: transparent; display: flex; flex-direction: column; gap: calc(var(--iu) * 6);
+  border-width: calc(var(--iu) * var(--inn-outer-s)) calc(var(--iu) * var(--inn-outer-s)) calc(var(--iu) * var(--inn-outer-b));
+  border-image: var(--inn-outer) var(--inn-outer-s) var(--inn-outer-s) var(--inn-outer-b) fill / calc(var(--iu) * var(--inn-outer-s)) calc(var(--iu) * var(--inn-outer-s)) calc(var(--iu) * var(--inn-outer-b)) stretch;
+  padding: calc(var(--iu) * 3); }
+#inn canvas { image-rendering: pixelated; display: block; width: calc(var(--iu) * 657); height: calc(var(--iu) * 369); }
+#inn .inn-win { box-sizing: border-box; width: calc(var(--iu) * 657); image-rendering: pixelated; border-style: solid; border-color: transparent;
+  border-width: calc(var(--iu) * var(--inn-paper-s)) calc(var(--iu) * var(--inn-paper-s)) calc(var(--iu) * var(--inn-paper-b));
+  border-image: var(--inn-paper) var(--inn-paper-s) var(--inn-paper-s) var(--inn-paper-b) fill / calc(var(--iu) * var(--inn-paper-s)) calc(var(--iu) * var(--inn-paper-s)) calc(var(--iu) * var(--inn-paper-b)) stretch;
+  padding: calc(var(--iu) * 4) calc(var(--iu) * 6) calc(var(--iu) * 6); }
+#inn .inn-head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 calc(var(--iu) * 5); }
+#inn h2 { margin: 0; font: inherit; font-size: var(--ifs); line-height: 1; color: #fbf3e2; text-shadow: calc(var(--ifs) / 16) calc(var(--ifs) / 16) 0 #221b17; }
+#inn button { --fr: var(--inn-btn); background: none; color: #fbf3e2; font: inherit; font-size: var(--ifs); line-height: 1; cursor: pointer; image-rendering: pixelated;
+  border-style: solid; border-color: transparent; border-width: calc(var(--iu) * var(--inn-btn-s)) calc(var(--iu) * var(--inn-btn-s)) calc(var(--iu) * var(--inn-btn-b));
+  border-image: var(--fr) var(--inn-btn-s) var(--inn-btn-s) var(--inn-btn-b) fill / calc(var(--iu) * var(--inn-btn-s)) calc(var(--iu) * var(--inn-btn-s)) calc(var(--iu) * var(--inn-btn-b)) stretch; }
+#inn button:hover:not(:disabled) { --fr: var(--inn-btn-h); }
+#inn button:disabled { cursor: default; }
+#inn .inn-back { padding: calc(var(--iu) * 2) calc(var(--iu) * 8); }
+#inn .inn-foods { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--iu) * 4); }
+#inn .inn-foods button { display: flex; align-items: center; justify-content: flex-start; gap: calc(var(--iu) * 4); padding: calc(var(--iu) * 2) calc(var(--iu) * 4); }
+#inn .inn-foods button:disabled .tx { opacity: .55; }
+#inn .ic { width: calc(var(--iu) * 41); height: calc(var(--iu) * 34); display: grid; place-items: center; flex: none; }
+#inn .ic img { image-rendering: pixelated; }
+#inn .tx { display: flex; flex-direction: column; align-items: flex-start; gap: calc(var(--iu) * 2); text-align: left; }
+#inn .pr { color: #f0b84a; }
+#inn .lock { color: #a19077; }
+#inn .inn-acts { display: flex; gap: calc(var(--iu) * 4); }
+#inn .inn-acts button { padding: calc(var(--iu) * 2) calc(var(--iu) * 8); }
+/* 音楽プレイヤー・コレクションケース（ご飯の窓と同じ見た目。部屋の上に重ねる） */
+#inn .inn-modal { position: absolute; inset: 0; display: none; place-items: center; background: #0b112088; }
+#inn .inn-modal.show { display: grid; }
+#inn .inn-mwin { width: calc(var(--iu) * 600); max-height: 92%; display: flex; flex-direction: column; background: #0b1120f0 padding-box; }   /* 後ろの部屋が透けないよう中は濃く */
+#inn .inn-mwin > .inn-cds, #inn .inn-mwin > .inn-case { min-height: 0; flex: 1 1 auto; }   /* 窓に入りきらないときは中で送る */
+#inn .inn-mwin small { color: #a19077; }
+#inn .inn-cds { display: grid; grid-template-columns: repeat(2, 1fr); gap: calc(var(--iu) * 3); overflow-y: auto; }
+#inn .inn-cds button { display: flex; align-items: center; gap: calc(var(--iu) * 4); padding: calc(var(--iu) * 2) calc(var(--iu) * 4); text-align: left; }
+#inn .inn-cds button.on { --fr: var(--inn-btn-h); color: #f0b84a; }
+#inn .inn-cds button:disabled { color: #506573; }
+#inn .ico { display: grid; place-items: center; flex: none; width: calc(var(--iu) * 36); height: calc(var(--iu) * 36); }
+#inn .ico canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+#inn .inn-case { display: grid; grid-template-columns: repeat(6, 1fr); gap: calc(var(--iu) * 4); overflow-y: auto; }
+#inn .inn-case .it { display: flex; flex-direction: column; align-items: center; gap: calc(var(--iu) * 2); text-align: center; line-height: 1.2; }
+#inn .inn-case .it.none { color: #506573; }
+#inn .inn-macts { display: flex; gap: calc(var(--iu) * 4); justify-content: flex-end; margin-top: calc(var(--iu) * 5); }
+#inn .inn-macts button { padding: calc(var(--iu) * 2) calc(var(--iu) * 8); }
 #op-back:active { translate: 0 calc(var(--u) * 1); }
 /* ハイスコア（OP のメニューから。js/ranking.js の記録の上位10件） */
 #op-rank { position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: calc(var(--u) * 400); max-height: calc(var(--u) * 258);
@@ -450,7 +544,9 @@ body.log-open #log { opacity: 0; }
   min-height: calc(var(--u) * 56); padding: calc(var(--u) * 1) calc(var(--u) * 6) calc(var(--u) * 1) calc(var(--u) * 2); background: #18222d; box-shadow: inset 0 0 0 calc(var(--u) * 1) #2c3a48; }
 #op-rank .row .no { color: var(--ink-dim); font-weight: normal; text-align: center; }
 #op-rank .row .face { width: calc(var(--u) * 48); height: calc(var(--u) * 48); }   /* 枠なし、顔グラの透明はそのまま */
+#op-rank .row .face { position: relative; }
 #op-rank .row .face img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+#op-rank .row .face img.job { position: absolute; right: calc(var(--u) * -4); bottom: 0; width: calc(var(--u) * 15); height: calc(var(--u) * 16); }   /* 顔の右下に職業の紋章（小） */
 #op-rank .row .who { display: flex; flex-direction: column; gap: calc(var(--u) * 4); min-width: 0; line-height: 1; }
 #op-rank .row .nm, #op-rank .row .sc { font-size: var(--fs-t); --o: var(--o-t); }   /* 名前とスコアは大きく（.t は見出しの板の名前なので使わない） */
 #op-rank .row .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -469,7 +565,7 @@ body.log-open #log { opacity: 0; }
 #op-rank .list.ota .tx { color: var(--ink-dim); white-space: normal; line-height: 1.3; }
 #op-rank .list.ota .row.none .nm { color: var(--ink-dim); }
 /* キャラメイクの「おたから」の欄：アイコンのボタン（付けているものは金の縁） */
-#op-win .ota { display: flex; gap: calc(var(--u) * 3); flex-wrap: wrap; }
+#op-win .ota { display: flex; gap: calc(var(--u) * 3); flex-wrap: wrap; align-content: flex-start; max-height: calc(var(--u) * 43); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #506573 transparent; }   /* 2段まで。それより多いときは中で送る（2026-10-20、おたからが31件になって窓が画面からはみ出たため） */
 #op-win button.ob { width: calc(var(--u) * 20); height: calc(var(--u) * 20); padding: calc(var(--u) * 0); border: calc(var(--u) * 1) solid #506573; border-image: none; background: #18222d; }
 #op-win button.ob canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
 #op-win button.ob.on { border-color: var(--gold); background: #2c3a48; }
@@ -526,6 +622,8 @@ body.log-open #log { opacity: 0; }
 #gameover .go-panel { position: absolute; left: 50%; top: calc(var(--u) * 150); translate: -50% 0; display: none; text-align: center; color: var(--ink); padding: calc(var(--u) * 4) calc(var(--u) * 10) calc(var(--u) * 6); }
 #gameover .go-panel.show { display: block; }
 #gameover .go-panel p { margin: 0 0 calc(var(--u) * 6); }
+#gameover .go-got { display: flex; align-items: center; justify-content: center; gap: calc(var(--u) * 4); }   /* ゲームオーバーで手に入れたおたから（アイコン＋名前） */
+#gameover .go-got canvas { position: static; inset: auto; width: calc(var(--u) * 18); height: calc(var(--u) * 18); image-rendering: pixelated; }
 #gameover .acts { display: flex; gap: calc(var(--u) * 6); justify-content: center; }
 #gameover button { --fr: var(--fr-btn); color: var(--ink); background: none; image-rendering: pixelated; font-family: 'MaruMonica', 'DotGothic16', monospace;
   border-style: solid; border-color: transparent; border-width: calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-s)) calc(var(--u) * var(--fr-btn-b));
@@ -609,7 +707,7 @@ body[data-tut="forced"] #cardtip button[data-act="1マス移動に使う"] { out
   <button id="log-tab" title="ログ（L）" aria-label="ログ"><i></i></button>
   <button id="menu-btn" aria-label="メニュー"><i></i></button>
   <button id="pack-btn" title="持ち物（所持カードの一覧）" aria-label="もちもの一覧"><span class="lab mm m">もちもの一覧</span><canvas class="px" data-icon="pack"></canvas></button>
-  <div id="hud-me"><div class="face"><img id="portrait" alt="盗賊"></div></div>
+  <div id="hud-me"><div class="face"><img id="portrait" alt="盗賊"></div><canvas id="job-ic" class="px" aria-label="職業"></canvas></div>
   <div id="status">
     <div class="st-row"><span class="hp-lab"><b class="mm m">HP</b><span id="hp-num" class="mm l">10/10</span></span><div class="blk" id="block-row" title="防御"><b class="mm m">防御</b><canvas class="px" data-icon="shield"></canvas><span id="block" class="mm l">0</span></div><span></span></div>
     <div class="bar" title="体力"><span id="hp-bar"></span></div>
@@ -622,8 +720,10 @@ body[data-tut="forced"] #cardtip button[data-act="1マス移動に使う"] { out
   <div id="piles">
     <div class="pile" id="deck" title="山札"><div class="stack"><i></i><i></i><i></i></div><b id="deck-n" class="mm l">0</b><small class="mm s">山札</small></div>
     <div class="pile" id="disc" title="捨て札"><div class="stack"><i></i><i></i><span id="disc-face"></span></div><b id="disc-n" class="mm l">0</b><small class="mm s">捨て札</small></div>
+    <div class="pile small" id="wait-pile" title="一時待機（ライトのカード。ターンが進むと捨て札へ）" hidden><div class="stack"><i></i><i></i></div><b id="wait-n" class="mm l">0</b><small class="mm s">一時待機</small></div>
     <div class="pile small" id="rem" title="除外（押すと一覧）"><div class="stack"><i></i><i></i></div><b id="rem-n" class="mm l">0</b><small class="mm s">除外</small></div>
   </div>
+  <button id="wait-btn" class="mm m" title="カードを使わずに、その場で1ターン待つ（Z）。敵は1回動く" hidden>待機</button>   <!-- 2（CardRogue）だけ -->
   <div id="hand"></div>
   <div id="cardtip"></div>
   <div id="tip" class="mm m"></div>
@@ -648,22 +748,29 @@ body[data-tut="forced"] #cardtip button[data-act="1マス移動に使う"] { out
     <div id="op-win" class="pixwin"></div>
     <div id="op-rank" class="pixwin"></div>
     <button id="op-back" class="mm w">◀ タイトルへ</button>
+    <button id="op-inn" class="mm w" disabled>宿屋</button>
+    <div id="op-notice" class="pixwin mm w">ダンディが宿にやってきた。</div>
+    <div id="op-job"><button class="arr l" data-d="-1" aria-label="前の職業"></button><div class="nm mm h"></div><button class="arr r" data-d="1" aria-label="次の職業"></button></div>
   </div>
 </div>
 <div id="loading">読み込み中…（three.js をネットから読みます）</div>
 <script src="js/logic.js"></script>
 <script src="js/rules_patch.js"></script>
+<script src="js/logic2.js"></script>   <!-- 原作2（CardRogue.html）のルール。CardRogue を遊ぶときだけ HK をこれに差し替える -->
 <script src="js/trace.js"></script>
 <script src="js/sprites.js"></script>
 <script src="js/icons.js"></script>
+<script src="js/icons_cardrogue.js"></script>   <!-- 2（CardRogue）の新しいカードの絵 -->
 <script src="js/cardback.js"></script>
 <script src="js/boardtiles.js"></script>
 <script src="js/sprites_diag.js"></script>
 <script src="js/enemies_hd.js"></script>
+<script src="js/jobs_trial.js"></script>   <!-- 職業えらびの見本用の仮の絵（戦士・魔法使い）。本番の絵が js/enemies_hd.js に入ったら消す -->
 <script src="js/palette.js"></script>
 <script src="js/bgzones.js"></script>
 <script src="js/ending_assets.js"></script>
 <script src="js/ending_bg.js"></script>
+<script src="js/ending_bg2.js"></script>   <!-- 2（CardRogue）の1枚絵：B60F 踏破・全職クリア・落盤（クリアの絵_20261018/作業/ゲームへ書き出し.py） -->
 <script src="js/ending.js"></script>
 <script src="js/face.js"></script>
 <script src="js/face_anim.js"></script>
@@ -678,6 +785,9 @@ body[data-tut="forced"] #cardtip button[data-act="1マス移動に使う"] { out
 <script src="js/ranking.js"></script>
 <script src="js/otakara_assets.js"></script>
 <script src="js/otakara.js"></script>
+<script src="js/cat_room_data.js"></script>   <!-- 宿屋（猫の育成）の絵と数。猫の育成_20261018/ゲーム用/ から写したもの -->
+<script src="js/inn.js"></script>   <!-- 宿屋（猫の育成）。OP の左下から -->
+<script src="js/cardrogue.js"></script>   <!-- CardRogue（2）だけの入力と見せ方 -->
 <script src="js/game3d.js"></script>
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';

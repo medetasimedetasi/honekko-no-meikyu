@@ -17,13 +17,24 @@ TRACKS = {   # ゲームでの名前: 採用のファイル（.json があれば
     'title': '仮/title_bagpipe_loop',             # タイトル（バグパイプ。仮＝BP2、ユーザーが選んだら同じ名前で中身が替わる）
     'ending': '仮/ending',                        # エンディング（仮＝EN2、110秒、ループしない）
     'tetteree': '仮/score_tetteree',              # 最終スコアの「テッテレー」
+    # 2（CardRogue）の 31〜60F（2026-10-19 音楽ジャンルのセッションから。引継ぎ_音楽_カードローグ_20261019.md）
+    'c31': 'H5_floor31_tiptoe_canon_loop',            # B31〜39F
+    'c40': 'H4_floor40_canon_piano_テンポ90_loop',     # B40〜49F
+    'c50': '仮/danse_floor50_loop',                   # B50〜58F（死の舞踏の序盤）
+    'c59': '仮/danse_floor59_main_loop',              # B59F（ボス）ふだん
+    'c59last': '仮/danse_floor59_last_enemy_loop',    # B59F 敵が残り1体になったら
+    'c59fin': '仮/danse_floor59_finale',              # B59F 残り1体を倒したら（ループしない。鳴り終わったら無音）
+    'c60': 'R7_floor60_escape_loop',                  # B60F（脱出）
+    'ending_escape': 'ER1_ending_escape_jig_やわらか',  # 2の B60F 脱出のエンディング（ループしない、120秒）
+    'ending_gs': 'EG2_ending_grandslam_theme',         # 2のグランドスラムのエンディング（ループしない、118秒）
+    'cat_room': 'NK2_cat_room_waltz_loop_猫の声入り',   # 宿屋（猫の育成）の部屋：木琴のワルツ（猫の声入り）。1.91→76.93秒をループ（2026-10-20）
 }
 for key, name in TRACKS.items():
     data = base64.b64encode(open(f'{SRC}/{name}.ogg', 'rb').read()).decode()
     meta = {'src': name}
     if os.path.exists(f'{SRC}/{name}.json'):
         j = json.load(open(f'{SRC}/{name}.json', encoding='utf8'))
-        meta.update(loopStart=j['loop_start_sec'], loopEnd=j['loop_end_sec'])
+        if j.get('loop_end_sec') is not None: meta.update(loopStart=j['loop_start_sec'], loopEnd=j['loop_end_sec'])
     open(f'{OUT}/{key}.js', 'w', encoding='utf8').write(
         f'// {name}.ogg（音楽案_20261006/採用）。制作/音をゲームへ.py が書き出す。手で直さない\n'
         f'(globalThis.HK_AUDIO ||= {{}})[{json.dumps(key)}] = {json.dumps({**meta, "data": data}, ensure_ascii=False)};\n')

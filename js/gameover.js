@@ -16,7 +16,8 @@ const GROUND = 112;                              // 犬の足もとの高さ（�
 const K = 4, SW = CW * K, SH = CH * K;            // 担架の一行のキャンバス（960×540、1ドット＝4px）
 const APPEAR = 10, WALK_FROM = 18, SPEED = 560;  // 一行が出るコマ、走り出すコマ、走る速さ（画面の px/秒）
 const ALPHA = 0.8;                               // 一行の不透明度
-let root = null, cv = null, g = null, cv2 = null, g2 = null, panel = null, active = false, timer = 0, raf = 0, frame = 0, t0 = 0, opts = null, ended = false;
+const NO_RESCUE_MS = 3600;                       // 担架を出さないとき（opts.noRescue）、文字が出そろってからボタンまで
+let bgc = null, root = null, cv = null, g = null, cv2 = null, g2 = null, panel = null, active = false, timer = 0, raf = 0, frame = 0, t0 = 0, opts = null, ended = false;
 const sprites = {};
 
 // ---------------------------------------------------------------- 絵
@@ -39,13 +40,13 @@ function buildSprites(hair) {
   if (hair) { pal.A = hair[0]; pal.a = hair[1]; }   // 主人公の髪（キャラメイクの髪色）
   for (const f of 'ABCD') { sprites['front' + f] = sprite(dogRows(f, true), pal); sprites['back' + f] = sprite(dogRows(f, false), pal); }
   sprites.hero = sprite(A.hero, pal); sprites.stretcher = sprite(A.stretcher, pal);
-  sprites.letters = letters();
+  sprites.letters = letters(opts.title || TEXT);
 }
 // 「GAME OVER」の文字：マルモニカを書体本来の 16px でキャンバスに描き、半分より濃い所だけ拾って1ドットの線にする。縁は1ドットの黒
-function letters() {
+function letters(text) {
   const out = [], tmp = document.createElement('canvas'), t = tmp.getContext('2d', { willReadFrequently: true });
   tmp.width = 20; tmp.height = 20;
-  for (const ch of TEXT) {
+  for (const ch of text) {
     t.clearRect(0, 0, 20, 20); t.font = "16px 'MaruMonica'"; t.textBaseline = 'top'; t.fillStyle = '#fff'; t.fillText(ch, 2, 2);
     const w = ch === ' ' ? 5 : Math.ceil(t.measureText(ch).width), d = t.getImageData(0, 0, 20, 20).data;
     const c = document.createElement('canvas'); c.width = w + 2; c.height = 18; const x = c.getContext('2d');
@@ -63,7 +64,9 @@ function letters() {
 // ---------------------------------------------------------------- 描く（コマ番号だけで決まる）
 function draw(k) {
   g.clearRect(0, 0, CW, CH);
-  g.fillStyle = `rgba(11,17,32,${(DARK * Math.min(1, k / DARK_FRAMES)).toFixed(3)})`; g.fillRect(0, 0, CW, CH);
+  const fadeIn = Math.min(1, k / DARK_FRAMES);
+  if (bgc) bgc.style.opacity = opts.bg ? fadeIn : 0;          // 背景の1枚絵（opts.bg）は暗転と一緒にじわっと出す
+  g.fillStyle = `rgba(11,17,32,${((opts.dark ?? DARK) * fadeIn).toFixed(3)})`; g.fillRect(0, 0, CW, CH);
   // GAME OVER（文字は2コマおきに落ちてくる）
   const L = sprites.letters, total = L.reduce((s, l) => s + l.w, 0);
   let x = Math.round((CW - total - 18) / 2);
@@ -99,15 +102,19 @@ const goneMs = () => WALK_FROM * FR + (startX() + groupW() * K) / SPEED * 1000 +
 function tick() { frame++; draw(frame); }
 function loop(now) {
   if (!active) return;
-  const ms = now - t0; drawGroup(ms);
-  if (!ended && ms >= goneMs()) finish();
+  const ms = now - t0;
+  if (!opts.noRescue) drawGroup(ms); else g2.clearRect(0, 0, SW, SH);
+  if (!ended && ms >= (opts.noRescue ? NO_RESCUE_MS : goneMs())) finish();
   raf = requestAnimationFrame(loop);
 }
 function finish() {
   ended = true;
   if (frame < 40) { frame = 40; draw(frame); }       // 飛ばしたときは文字を出しきる
   t0 = performance.now() - goneMs();
-  panel.innerHTML = `<p class="mm w">${esc(opts.info || '')}</p><div class="acts"><button class="primary mm w" data-act="again">もう一度 / B1F から</button>${opts.onTitle ? '<button class="mm w" data-act="title">タイトルへ</button>' : ''}</div>`;
+  const got = opts.got || [];   // ゲームオーバーで手に入れたおたから（坊主頭など。2026-10-20）
+  panel.innerHTML = `${opts.reason ? `<p class="mm w">${esc(opts.reason)}</p>` : ''}<p class="mm w">${esc(opts.info || '')}</p>${got.map((u, i) => `<p class="mm w go-got" data-i="${i}">${esc(u.name)}を手に入れた！</p>`).join('')}<div class="acts"><button class="primary mm w" data-act="again">もう一度 / B1F から</button>${opts.onTitle ? '<button class="mm w" data-act="title">タイトルへ</button>' : ''}</div>`;
+  panel.querySelectorAll('.go-got').forEach(p => { const ic = got[+p.dataset.i].icon; if (ic) { const c = document.createElement('canvas'); c.width = c.height = 18; c.getContext('2d').drawImage(ic, 0, 0); p.prepend(c); } });
+  if (got.length) globalThis.Music?.se('unlock');   // シュッ（エンディングのおたからと同じ）
   panel.classList.add('show');
 }
 function close(then) {
@@ -117,9 +124,9 @@ function close(then) {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function build() {
   root = document.createElement('div'); root.id = 'gameover';
-  root.innerHTML = `<canvas width="${CW}" height="${CH}"></canvas><canvas class="go-group" width="${SW}" height="${SH}"></canvas><div class="go-panel pixwin"></div>`;
+  root.innerHTML = `<canvas class="go-bg" width="960" height="540"></canvas><canvas width="${CW}" height="${CH}"></canvas><canvas class="go-group" width="${SW}" height="${SH}"></canvas><div class="go-panel pixwin"></div>`;
   (document.getElementById('stage') || document.body).appendChild(root);
-  cv = root.querySelector('canvas'); g = cv.getContext('2d'); g.imageSmoothingEnabled = false; panel = root.querySelector('.go-panel');
+  bgc = root.querySelector('.go-bg'); cv = root.querySelector('canvas:not(.go-bg):not(.go-group)'); g = cv.getContext('2d'); g.imageSmoothingEnabled = false; panel = root.querySelector('.go-panel');
   cv2 = root.querySelector('.go-group'); g2 = cv2.getContext('2d'); g2.imageSmoothingEnabled = false;
   root.addEventListener('pointerdown', ev => { if (!active || ev.target.closest('button')) return; if (!ended) finish(); });   // クリックで最後まで飛ばす
   panel.addEventListener('click', ev => {
@@ -132,12 +139,17 @@ function build() {
     if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopImmediatePropagation(); if (!ended) finish(); else close(opts.onAgain); }
   }, true);
 }
-// opts：{ hair: [明, 中] 主人公の髪の色, info: '到達 B3F・42ターン', onAgain(), onTitle() }
+// opts：{ title: 'GAME OVER' の代わりの文字, bg: 背景に敷く1枚絵（480×270 の data URL）, dark: 背景を沈める濃さ（ふだん 0.8）, noRescue: 担架の一行を出さない,
+//        （title・bg・dark・noRescue は 2026-10-19 背景のセッションが追加：2の B60F 落盤のゲームオーバー用）
+//        got: [{ name, icon（18×18 のキャンバス） }] ゲームオーバーで手に入れたおたから（2026-10-20）,
+//        hair: [明, 中] 主人公の髪の色, reason: '落盤に巻き込まれた'（あれば info の上の行に出す。2026-10-18 背景のセッションが追加）, info: '到達 B3F・42ターン', onAgain(), onTitle() }
 async function play(o) {
   if (active) return;
   opts = o || {};
   if (!root) build();
-  try { await document.fonts.load("16px 'MaruMonica'", TEXT); } catch {}
+  try { await document.fonts.load("16px 'MaruMonica'", opts.title || TEXT); } catch {}
+  const bctx = bgc.getContext('2d'); bctx.clearRect(0, 0, 960, 540); bgc.style.opacity = 0;
+  if (opts.bg) { const im = new Image(); im.src = opts.bg; try { await im.decode(); } catch {} bctx.imageSmoothingEnabled = false; bctx.drawImage(im, 0, 0, 960, 540); }
   buildSprites(opts.hair);
   active = true; ended = false; frame = 0; panel.classList.remove('show'); root.style.display = 'block';
   draw(0); clearInterval(timer); timer = setInterval(tick, FR);
