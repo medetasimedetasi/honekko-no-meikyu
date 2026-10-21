@@ -184,7 +184,7 @@ body.log-open #log { opacity: 0; }
   text-shadow: calc(var(--u) * .5) 0 0 #221b17, calc(var(--u) * -.5) 0 0 #221b17, 0 calc(var(--u) * .5) 0 #221b17, 0 calc(var(--u) * -.5) 0 #221b17; }
 .card .band .lock { position: absolute; right: calc(var(--u) * 2); top: calc(var(--u) * .5); width: calc(var(--u) * 7); height: calc(var(--u) * 8); background: var(--lock) 0 0 / 100% 100%; image-rendering: pixelated; }
 /* 手札の錠前（2026-10-18 ユーザー指定）：絵の右上に。押すとロックの切り替え。外しているときは開いた錠前を薄く、ロック中は閉じた錠前 */
-.card .lk { position: absolute; right: calc(var(--u) * 1); top: calc(var(--u) * 9); width: calc(var(--u) * 11); height: calc(var(--u) * 12); padding: calc(var(--u) * 2); z-index: 1; cursor: pointer; opacity: .45; }
+.card .lk { position: absolute; left: calc(var(--u) * 1); top: calc(var(--u) * 9); width: calc(var(--u) * 11); height: calc(var(--u) * 12); padding: calc(var(--u) * 2); z-index: 1; cursor: pointer; opacity: .45; }   /* 錠前は左上（2026-10-21 ユーザー指定。前は右上） */
 .card .lk i { display: block; width: calc(var(--u) * 7); height: calc(var(--u) * 8); background: var(--lock-open) 0 0 / 100% 100%; image-rendering: pixelated; }
 .card .lk.on { opacity: 1; } .card .lk.on i { background-image: var(--lock); }
 .card .lk:hover { opacity: 1; }
