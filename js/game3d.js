@@ -2188,6 +2188,13 @@ function targetKey(d) {
   if (tg.kind === 'path') return CR.pathKey(tg, d);
   if (tg.kind === 'area') { say('もう一度押すか Enter で使う'); return; }
   const o = targetOptions(tg)[d];
+  // 2の魔法で矢印1回ですぐ出るもの（魔法の矢・稲妻などの攻撃、軽減魔法などの1マス移動）は、1回目は狙うだけ。同じ向きをもう一度か Enter で使う
+  // （2026-10-24 ユーザー指定：テストプレイで、歩くつもりの矢印で魔法が出てしまう事故があった。マウスで光ったマスを押すのは今までどおりすぐ使う）
+  const cobj = st.hand.find(c => c.id === tg.cardId);
+  if (st.version === 2 && cobj && HK.cardOf(cobj).type === '魔法' && (tg.kind === 'attack' || tg.max === 1) && tg.dir !== d) {
+    if (tg.kind === 'attack' ? !o.target : !o.tiles.length) { say(tg.kind === 'attack' ? 'そっちには届く敵がいない' : 'そっちには進めない'); bumpFace(d); return; }
+    tg.dir = d; tg.dist = 1; say('もう一度押すか Enter で使う'); return;
+  }
   if (tg.kind === 'attack') {
     if (!o.target) { say('そっちには届く敵がいない'); bumpFace(d); return; }
     perform('play', targetPayload(tg, { direction: d, distance: 1 }));
